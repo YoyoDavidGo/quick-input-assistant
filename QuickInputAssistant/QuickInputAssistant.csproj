@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>QuickInputAssistant</RootNamespace>
+    <Platforms>x64</Platforms>
+    <Platform>x64</Platform>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <SelfContained>false</SelfContained>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <!-- 自含模式：禁用 Bootstrap/DeploymentManager 自动初始化 -->
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
+    <WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
+    <!-- 禁用 MSBuild PRI 任务（缺少 VS 工具），改用 makepri.exe 后期生成 -->
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    <AppxMSBuildToolsPath>$(LOCALAPPDATA)\AppxStubs\AppxPackage\</AppxMSBuildToolsPath>
+  </PropertyGroup>
+
+  <!-- 覆盖缺失的 AppxPackage MSBuild 目标 -->
+  <Target Name="GetMrtPackagingOutputs" />
+  <Target Name="CopyLocalFilesOutputGroup" Returns="@(CopyLocalFilesOutputGroupOutput)">
+    <ItemGroup>
+      <CopyLocalFilesOutputGroupOutput Include="@(ReferenceCopyLocalPaths)">
+        <TargetPath>%(ReferenceCopyLocalPaths.DestinationSubDirectory)%(ReferenceCopyLocalPaths.Filename)%(ReferenceCopyLocalPaths.Extension)</TargetPath>
+      </CopyLocalFilesOutputGroupOutput>
+    </ItemGroup>
+  </Target>
+
+  <!-- 后期步骤：用 makepri.exe 生成 resources.pri（索引 XBF 文件） -->
+  <Target Name="GenerateResourcesPri" AfterTargets="Build">
+    <PropertyGroup>
+      <_MakePriExe>$(NuGetPackageRoot)microsoft.windows.sdk.buildtools\10.0.26100.1742\bin\10.0.26100.0\x64\makepri.exe</_MakePriExe>
+    </PropertyGroup>
+    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildProjectDirectory)\generate-pri.ps1&quot; -OutDir &quot;$(OutputPath).&quot; -MakePri &quot;$(_MakePriExe)&quot; -PriConfig &quot;$(MSBuildProjectDirectory)\priconfig.xml&quot; -IndexName &quot;$(MSBuildProjectName)&quot;"
+          IgnoreExitCode="true" />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.240627000" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
+    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.1.4" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+    <PackageReference Include="Serilog" Version="4.1.0" />
+    <PackageReference Include="Serilog.Extensions.Logging" Version="8.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+</Project>
