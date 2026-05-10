@@ -21,7 +21,7 @@ public sealed class InputService
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        // 等 Alt 物理松开（最多 400ms），然后用 Escape 退出菜单模式，再发字符
+        // 等 Alt 物理松开（最多 400ms），然后退出菜单模式，再发字符
         WaitForAltRelease(400);
         DismissMenu();
 
@@ -79,15 +79,15 @@ public sealed class InputService
         }
     }
 
-    /// <summary>发 Escape 关闭菜单模式，让键盘焦点回到文本框。</summary>
-    private void DismissMenu()
+    /// <summary>
+    /// 退出 Win32 菜单激活模式（Alt 松开后进入的菜单栏高亮状态）。
+    /// 用 WM_CANCELMODE 代替 VK_ESCAPE，避免关闭没有菜单栏的对话框。
+    /// </summary>
+    private static void DismissMenu()
     {
-        var esc = new[]
-        {
-            MakeVkKey(VK.ESCAPE, down: true),
-            MakeVkKey(VK.ESCAPE, down: false),
-        };
-        Send(esc, "Escape");
+        IntPtr fg = User32.GetForegroundWindow();
+        if (fg != IntPtr.Zero)
+            User32.SendMessage(fg, 0x001F /* WM_CANCELMODE */, IntPtr.Zero, IntPtr.Zero);
     }
 
     private void Send(INPUT[] inputs, string label)

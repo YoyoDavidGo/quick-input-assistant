@@ -24,10 +24,15 @@ internal sealed class ClipboardService
 
     // ── 公开接口 ──────────────────────────────────────────────────────
 
-    /// <summary>备份剪贴板所有格式，返回快照。</summary>
+    /// <summary>
+    /// 备份剪贴板文本内容。只保存 CF_UNICODETEXT，跳过图片/位图等非 HGLOBAL 格式，
+    /// 避免对 CF_BITMAP 等调用 GlobalLock 引发原生崩溃。
+    /// </summary>
     public ClipboardSnapshot Backup()
     {
         var snapshot = new ClipboardSnapshot();
+        snapshot.TextBefore = GetText();
+
         try
         {
             if (!User32.OpenClipboard(IntPtr.Zero))
@@ -36,31 +41,29 @@ internal sealed class ClipboardService
                 return snapshot;
             }
 
-            uint fmt = 0;
-            while ((fmt = User32.EnumClipboardFormats(fmt)) != 0)
+            try
             {
-                IntPtr hData = User32.GetClipboardData(fmt);
-                if (hData == IntPtr.Zero) continue;
-
-                // 只备份有句柄的格式（跳过 delay-render）
-                IntPtr locked = User32.GlobalLock(hData);
-                if (locked == IntPtr.Zero) continue;
-
-                try
+                IntPtr hData = User32.GetClipboardData(CF_UNICODETEXT);
+                if (hData != IntPtr.Zero)
                 {
-                    UIntPtr size = User32.GlobalSize(hData);
-                    byte[] buf = new byte[(int)size];
-                    Marshal.Copy(locked, buf, 0, buf.Length);
-                    snapshot.Formats[fmt] = buf;
+                    IntPtr locked = User32.GlobalLock(hData);
+                    if (locked != IntPtr.Zero)
+                    {
+                        try
+                        {
+                            UIntPtr size = User32.GlobalSize(hData);
+                            byte[] buf = new byte[(uint)size];
+                            Marshal.Copy(locked, buf, 0, buf.Length);
+                            snapshot.Formats[CF_UNICODETEXT] = buf;
+                        }
+                        finally { User32.GlobalUnlock(hData); }
+                    }
                 }
-                finally { User32.GlobalUnlock(hData); }
             }
+            finally { User32.CloseClipboard(); }
         }
         catch (Exception ex) { _log.LogWarning(ex, "备份剪贴板异常"); }
-        finally { User32.CloseClipboard(); }
 
-        // 也顺便记一下文本，便于后续比对
-        snapshot.TextBefore = GetText();
         return snapshot;
     }
 
