@@ -15,10 +15,12 @@ internal static class WH
 
 internal static class VK
 {
-    public const int MENU   = 0x12; // Alt
-    public const int BACK   = 0x08; // Backspace
+    public const int MENU    = 0x12; // Alt
+    public const int BACK    = 0x08; // Backspace
+    public const int ESCAPE  = 0x1B;
     public const int CONTROL = 0x11;
-    public const int KEY_C  = 0x43;
+    public const int SHIFT   = 0x10;
+    public const int KEY_C   = 0x43;
 
     public const int VK_1 = 0x31;
     public const int VK_2 = 0x32;

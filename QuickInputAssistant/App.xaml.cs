@@ -90,7 +90,8 @@ public partial class App : Application
                 path: Path.Combine(logDir, "app-.log"),
                 rollingInterval: RollingInterval.Day,
                 fileSizeLimitBytes: 5 * 1024 * 1024,
-                retainedFileCountLimit: 7)
+                retainedFileCountLimit: 7,
+                buffered: false)          // 立即刷盘，便于调试崩溃
             .CreateLogger();
 
         LoggerFactory = new LoggerFactory().AddSerilog(Log.Logger);

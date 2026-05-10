@@ -20,6 +20,9 @@ public sealed class InputService
     {
         if (string.IsNullOrEmpty(text)) return;
 
+        // 先发 Alt-up 退出 Alt/菜单模式，避免字符被当菜单键处理
+        ExitAltMode();
+
         var inputs = new List<INPUT>(text.Length * 2);
         foreach (char c in text)
         {
@@ -28,6 +31,16 @@ public sealed class InputService
         }
 
         Send(inputs.ToArray(), "TypeString");
+    }
+
+    /// <summary>发送 Alt-up 退出 Alt/菜单模式，防止后续字符输入被拦截。</summary>
+    private void ExitAltMode()
+    {
+        var inputs = new[]
+        {
+            MakeVkKey(VK.MENU, down: false),   // Alt up
+        };
+        User32.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
     }
 
     /// <summary>发送 n 次 Backspace。</summary>

@@ -92,7 +92,6 @@ public sealed class DateKeyService
         string date = _store.Get('Q');
 
         bool hasFocus = HasEditableFocus();
-        _log.LogInformation("Alt+Q HandleFirst: date={Date}, hasFocus={HasFocus}", date, hasFocus);
         if (hasFocus)
         {
             _input.TypeString(date);

@@ -43,6 +43,7 @@ internal sealed class CoreService : IDisposable
 
     private void OnHotkeyTriggered(char key)
     {
+
         // 1. 黑名单检查
         string? blocked = _blacklist.GetBlockedProcessName();
         if (blocked is not null)
