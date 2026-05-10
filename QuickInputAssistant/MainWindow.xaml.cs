@@ -159,8 +159,9 @@ public sealed partial class MainWindow : Window
             BorderThickness = new Thickness(1),
             Padding = new Thickness(3, 2, 3, 2),
         };
-        border.PointerEntered += (s, _) => ((Border)s!).Background = BrCapHover;
-        border.PointerExited  += (s, _) => ((Border)s!).Background = BrCapBg;
+        border.PointerEntered  += (s, _) => ((Border)s!).Background = BrCapHover;
+        border.PointerExited   += (s, _) => ((Border)s!).Background = BrCapBg;
+        border.PointerPressed  += (_, _) => App.OnKeyCapClicked(key);
 
         var stack = new StackPanel { Spacing = 0 };
 
@@ -195,8 +196,9 @@ public sealed partial class MainWindow : Window
             Padding = new Thickness(7, 3, 7, 3),
             Background = BrTransp,
         };
-        border.PointerEntered += (s, _) => ((Border)s!).Background = BrHoverBg;
-        border.PointerExited  += (s, _) => ((Border)s!).Background = BrTransp;
+        border.PointerEntered  += (s, _) => ((Border)s!).Background = BrHoverBg;
+        border.PointerExited   += (s, _) => ((Border)s!).Background = BrTransp;
+        border.PointerPressed  += (_, _) => App.OnKeyCapClicked(key);
 
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });

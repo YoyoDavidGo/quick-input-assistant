@@ -110,6 +110,17 @@ public partial class App : Application
         };
     }
 
+    /// <summary>UI 按钮点击时直接输出绑定内容（无 Alt 键干扰）。</summary>
+    internal static void OnKeyCapClicked(char key)
+    {
+        if (InputSvc == null || StoreSvc == null) return;
+        string val = (key == 'Q') ? (DateSvc?.CurrentDate ?? "") : StoreSvc.Get(key);
+        if (!string.IsNullOrEmpty(val))
+            InputSvc.TypeString(val);
+        else
+            StatusSvc?.Set(new Models.StatusMessage { Tone = Models.StatusTone.Info, Text = $"💡 ALT+{key} 尚未绑定，选中文字再按热键绑定" });
+    }
+
     public static void Cleanup()
     {
         _coreSvc?.Dispose();

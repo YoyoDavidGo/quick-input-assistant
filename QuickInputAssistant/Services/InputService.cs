@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using QuickInputAssistant.PInvoke;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace QuickInputAssistant.Services;
 
@@ -20,8 +21,9 @@ public sealed class InputService
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        // 先发 Alt-up 退出 Alt/菜单模式，避免字符被当菜单键处理
-        ExitAltMode();
+        // 等 Alt 物理松开（最多 400ms），然后用 Escape 退出菜单模式，再发字符
+        WaitForAltRelease(400);
+        DismissMenu();
 
         var inputs = new List<INPUT>(text.Length * 2);
         foreach (char c in text)
@@ -29,18 +31,7 @@ public sealed class InputService
             inputs.Add(MakeUnicodeKey(c, down: true));
             inputs.Add(MakeUnicodeKey(c, down: false));
         }
-
         Send(inputs.ToArray(), "TypeString");
-    }
-
-    /// <summary>发送 Alt-up 退出 Alt/菜单模式，防止后续字符输入被拦截。</summary>
-    private void ExitAltMode()
-    {
-        var inputs = new[]
-        {
-            MakeVkKey(VK.MENU, down: false),   // Alt up
-        };
-        User32.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
     }
 
     /// <summary>发送 n 次 Backspace。</summary>
@@ -56,9 +47,15 @@ public sealed class InputService
         Send(inputs, "Backspace");
     }
 
-    /// <summary>模拟 Ctrl+C。</summary>
+    /// <summary>
+    /// 模拟 Ctrl+C：等 Alt 物理松开后直接发 Ctrl+C。
+    /// 不发 Escape，避免部分应用在 Escape 时清除文本选区。
+    /// Ctrl 键本身会自动退出 Win32 菜单模式。
+    /// </summary>
     public void SendCtrlC()
     {
+        WaitForAltRelease(400);
+
         var inputs = new[]
         {
             MakeVkKey(VK.CONTROL, down: true),
@@ -70,6 +67,28 @@ public sealed class InputService
     }
 
     // ── 私有辅助 ──────────────────────────────────────────────────────
+
+    /// <summary>等 Alt 键物理松开（最多 maxWaitMs ms）。</summary>
+    private static void WaitForAltRelease(int maxWaitMs)
+    {
+        int waited = 0;
+        while (waited < maxWaitMs && (GetAsyncKeyState(VK.MENU) & 0x8000) != 0)
+        {
+            Thread.Sleep(10);
+            waited += 10;
+        }
+    }
+
+    /// <summary>发 Escape 关闭菜单模式，让键盘焦点回到文本框。</summary>
+    private void DismissMenu()
+    {
+        var esc = new[]
+        {
+            MakeVkKey(VK.ESCAPE, down: true),
+            MakeVkKey(VK.ESCAPE, down: false),
+        };
+        Send(esc, "Escape");
+    }
 
     private void Send(INPUT[] inputs, string label)
     {
@@ -96,4 +115,7 @@ public sealed class InputService
             u = { ki = new KEYBDINPUT { wVk = (ushort)vk, dwFlags = down ? KEYEVENTF.KEYDOWN : KEYEVENTF.KEYUP } }
         };
     }
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
 }

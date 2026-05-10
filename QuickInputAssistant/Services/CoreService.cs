@@ -70,8 +70,11 @@ internal sealed class CoreService : IDisposable
 
     private void HandleStandardKey(char key)
     {
+        _log.LogInformation("热键触发: ALT+{Key}", key);
+
         // 无痕借用剪贴板
         var snap = _clipboard.Backup();
+        _log.LogInformation("ALT+{Key} 备份完成, TextBefore=\"{Text}\"", key, snap.TextBefore);
         _clipboard.SendCtrlC();
 
         // 轮询（在线程池上等待，不阻塞 UI）
@@ -83,6 +86,7 @@ internal sealed class CoreService : IDisposable
             if (newText is not null)
             {
                 // 绑定模式
+                _log.LogInformation("ALT+{Key} 检测到选中: \"{Val}\"", key, newText);
                 _store.Set(key, newText);
                 string displayVal = newText.Length > 20 ? newText[..20] + "…" : newText;
                 _status.Set(new StatusMessage
@@ -90,10 +94,10 @@ internal sealed class CoreService : IDisposable
                     Tone = StatusTone.Success,
                     Text = $"✅ 设置 ALT+{key} 为 \"{displayVal}\" 成功！"
                 });
-                _log.LogInformation("ALT+{Key} 绑定: {Val}", key, newText);
             }
             else
             {
+                _log.LogInformation("ALT+{Key} 无选中，进入输出模式", key);
                 // 输出模式
                 string val = _store.Get(key);
                 if (!string.IsNullOrEmpty(val))
