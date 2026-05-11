@@ -20,7 +20,9 @@ internal static class VK
     public const int ESCAPE  = 0x1B;
     public const int CONTROL = 0x11;
     public const int SHIFT   = 0x10;
+    public const int LEFT    = 0x25;
     public const int KEY_C   = 0x43;
+    public const int KEY_V   = 0x56;
 
     public const int VK_1 = 0x31;
     public const int VK_2 = 0x32;
@@ -70,4 +72,36 @@ internal static class WS
     public const int CAPTION    = 0x00C00000; // WS_BORDER | WS_DLGFRAME
     public const int THICKFRAME = 0x00040000;
     public const int SYSMENU    = 0x00080000;
+}
+
+internal static class LWA
+{
+    public const uint COLORKEY = 0x00000001; // 颜色键控透明
+    public const uint ALPHA    = 0x00000002; // 整体 alpha
+}
+
+internal static class RGN
+{
+    public const int AND  = 1;
+    public const int OR   = 2;
+    public const int XOR  = 3;
+    public const int DIFF = 4;
+    public const int COPY = 5;
+}
+
+internal static class HWND_Z
+{
+    public static readonly IntPtr TOPMOST    = new(-1);
+    public static readonly IntPtr NOTOPMOST  = new(-2);
+    public static readonly IntPtr TOP        = new(0);
+    public static readonly IntPtr BOTTOM     = new(1);
+}
+
+internal static class SWP
+{
+    public const uint NOSIZE     = 0x0001;
+    public const uint NOMOVE     = 0x0002;
+    public const uint NOZORDER   = 0x0004;
+    public const uint NOACTIVATE = 0x0010;
+    public const uint SHOWWINDOW = 0x0040;
 }

@@ -33,10 +33,10 @@ public sealed partial class MainWindow : Window
     private UIElement? _dragElement;
 
     // 三种模式统一窗口宽度（其他尺寸全部由 XAML 测量得到）
-    private const int WIN_W = 305;
-    private const int BTN_SZ = 22;
-    private const double SB_RADIUS = 13;
-    private const double ROW_RADIUS = 8;
+    private const int WIN_W = 430;
+    private const int BTN_SZ = 26;
+    private const double SB_RADIUS = 15;
+    private const double ROW_RADIUS = 10;
 
     // Segoe Fluent Icons / MDL2 Assets 字形（保持视觉一致）
     private const string ICON_KEYBOARD = ""; // KeyboardClassic
@@ -68,6 +68,10 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        // 真透明背景：WinUIEx 的 TransparentTintBackdrop 让窗口背景真正透明，
+        // XAML 圆角 Border 由 WinUI3 用 DirectX 抗锯齿渲染，无白边无锯齿
+        try { this.SystemBackdrop = new WinUIEx.TransparentTintBackdrop(); }
+        catch (Exception ex) { _log.LogWarning(ex, "TransparentTintBackdrop 设置失败"); }
         ConfigureWindow();
         PopulateUI();
         App.StatusSvc.StatusChanged += OnStatusChanged;
@@ -110,7 +114,9 @@ public sealed partial class MainWindow : Window
             ResizeForMode(_mode);
             PositionWindow();
             ForceTopmost();
-            ScheduleRegionUpdate();
+            // 不再用 SetWindowRgn 裁剪窗口形状（GDI 区域硬切产生锯齿）。
+            // TransparentTintBackdrop 让窗口真透明，可见形状由 XAML 圆角 Border 决定，
+            // WinUI3 的 DirectX 渲染对边缘做抗锯齿，圆角光滑。
         };
 
         // 每次激活时重新置顶（防止其他窗口/系统操作把它压下去）
@@ -152,13 +158,13 @@ public sealed partial class MainWindow : Window
     private void ResizeForMode(ViewMode mode)
     {
         double scale = Content?.XamlRoot?.RasterizationScale ?? 1.0;
-        // 高度足够即可，区域裁剪决定可见形状
+        // 状态栏 30 + gap 4 + 键盘行(38+padding 6=44)*3 + 行间距 2*2 = 30+4+132+4 = 170
         int h = mode switch
         {
-            ViewMode.Capsule  => 36,
-            ViewMode.Keyboard => 150,
-            ViewMode.List     => 220,
-            _ => 36,
+            ViewMode.Capsule  => 40,
+            ViewMode.Keyboard => 185,
+            ViewMode.List     => 260,
+            _ => 40,
         };
         AppWindow.Resize(new SizeInt32((int)(WIN_W * scale), (int)(h * scale)));
     }
@@ -245,12 +251,12 @@ public sealed partial class MainWindow : Window
     {
         var border = new Border
         {
-            Width = 46, Height = 28,
-            CornerRadius = new CornerRadius(5),
+            Width = 64, Height = 38,
+            CornerRadius = new CornerRadius(6),
             Background = BrCapBg,
             BorderBrush = BrCapBorder,
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(3, 2, 3, 2),
+            Padding = new Thickness(5, 3, 5, 3),
         };
         border.PointerEntered += (s, _) => ((Border)s!).Background = BrCapHover;
         border.PointerExited  += (s, _) => ((Border)s!).Background = BrCapBg;
@@ -258,14 +264,14 @@ public sealed partial class MainWindow : Window
 
         var stack = new StackPanel { Spacing = 0 };
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 1 };
-        label.Children.Add(Txt("Alt", 7, BrFgMute, FontWeights.Medium));
-        label.Children.Add(Txt("+",   7, BrFgMute, FontWeights.Medium));
-        label.Children.Add(Txt(key.ToString(), 7.5, BrFg, FontWeights.Bold));
+        label.Children.Add(Txt("Alt", 9, BrFgMute, FontWeights.Medium));
+        label.Children.Add(Txt("+",   9, BrFgMute, FontWeights.Medium));
+        label.Children.Add(Txt(key.ToString(), 10, BrFg, FontWeights.Bold));
         stack.Children.Add(label);
 
         var val = new TextBlock
         {
-            FontSize = 7.5,
+            FontSize = 10,
             FontFamily = new FontFamily("Cascadia Mono, Consolas"),
             TextTrimming = TextTrimming.CharacterEllipsis,
             Foreground = BrFg,
@@ -283,7 +289,7 @@ public sealed partial class MainWindow : Window
     {
         var border = new Border
         {
-            Padding = new Thickness(7, 3, 7, 3),
+            Padding = new Thickness(9, 4, 9, 4),
             Background = BrTransp,
         };
         border.PointerEntered += (s, _) => ((Border)s!).Background = BrHoverBg;
@@ -291,12 +297,12 @@ public sealed partial class MainWindow : Window
         border.PointerPressed += (_, e) => { App.OnKeyCapClicked(key); e.Handled = true; };
 
         var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var keyTb = new TextBlock
         {
-            FontSize = 8.5, Foreground = BrFgMute,
+            FontSize = 11, Foreground = BrFgMute,
             VerticalAlignment = VerticalAlignment.Center,
             IsHitTestVisible = false,
         };
@@ -312,7 +318,7 @@ public sealed partial class MainWindow : Window
 
         var val = new TextBlock
         {
-            FontSize = 8.5,
+            FontSize = 11,
             FontFamily = new FontFamily("Cascadia Mono, Consolas"),
             TextTrimming = TextTrimming.CharacterEllipsis,
             Foreground = BrFg,

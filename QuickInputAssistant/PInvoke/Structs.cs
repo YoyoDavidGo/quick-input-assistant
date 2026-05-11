@@ -78,3 +78,19 @@ internal struct RECT
     public int Right;
     public int Bottom;
 }
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct MARGINS
+{
+    public int cxLeftWidth;
+    public int cxRightWidth;
+    public int cyTopHeight;
+    public int cyBottomHeight;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct POINT
+{
+    public int X;
+    public int Y;
+}

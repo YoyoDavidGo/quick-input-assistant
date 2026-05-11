@@ -61,24 +61,78 @@ internal sealed class HotkeyService : IDisposable
             _log.LogInformation("键盘钩子安装成功");
     }
 
+    // 物理 Alt 状态自维护 + 新鲜度判断：
+    // - _altPhysicallyDown 跟踪物理 Alt 事件（非注入）
+    // - _altActiveAtUtc 在 Alt down 和每次拦截热键时刷新
+    // - 新鲜窗口 5 秒：超过 5 秒未活动则视为 Alt 不再有效（防"打字母 a 误触发"）
+    //   连续按 Alt+热键时每次都刷新，长按 Alt 操作期间不会失效
+    private bool _altPhysicallyDown;
+    private DateTime _altActiveAtUtc;
+    private static readonly TimeSpan AltFreshWindow = TimeSpan.FromSeconds(5);
+
     private IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode >= 0 && (wParam == (IntPtr)WM.KEYDOWN || wParam == (IntPtr)WM.SYSKEYDOWN))
+        if (nCode < 0) return User32.CallNextHookEx(_hook, nCode, wParam, lParam);
+
+        var kb = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+
+        // 忽略我们自己 SendInput 注入的事件
+        const uint LLKHF_INJECTED = 0x10;
+        if ((kb.flags & LLKHF_INJECTED) != 0)
+            return User32.CallNextHookEx(_hook, nCode, wParam, lParam);
+
+        bool isAltVk = kb.vkCode == (uint)VK.MENU || kb.vkCode == 0xA4 /* VK_LMENU */ || kb.vkCode == 0xA5 /* VK_RMENU */;
+        bool isDown  = wParam == (IntPtr)WM.KEYDOWN || wParam == (IntPtr)WM.SYSKEYDOWN;
+        bool isUp    = wParam == (IntPtr)WM.KEYUP   || wParam == (IntPtr)WM.SYSKEYUP;
+
+        // 跟踪物理 Alt 状态
+        if (isAltVk)
         {
-            var kb = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
-            if (TargetVKs.Contains(kb.vkCode))
+            if (isDown && !_altPhysicallyDown)
             {
-                // 检查 Alt 是否按下（GetAsyncKeyState 高位为 1 表示按下）
-                short altState = GetAsyncKeyState(VK.MENU);
-                if ((altState & 0x8000) != 0 && VkToChar.TryGetValue(kb.vkCode, out char c))
-                {
-                    // 不阻塞：投递到队列后立即返回
-                    _queue.Writer.TryWrite(c);
-                    return (IntPtr)1; // 拦截按键，阻止传递
-                }
+                _altPhysicallyDown = true;
+                _altActiveAtUtc = DateTime.UtcNow;
+            }
+            else if (isUp)
+            {
+                _altPhysicallyDown = false;
+            }
+        }
+
+        if (isDown && TargetVKs.Contains(kb.vkCode))
+        {
+            // 必须同时满足：Alt 状态为按下 AND 新鲜（距离最近 Alt 活动 < 5 秒）
+            // 防止 Alt up 事件丢失导致 _altPhysicallyDown 卡 true，
+            // 用户后续打字母误被拦截
+            bool altFresh = _altPhysicallyDown &&
+                            DateTime.UtcNow - _altActiveAtUtc < AltFreshWindow;
+
+            if (altFresh && VkToChar.TryGetValue(kb.vkCode, out char c))
+            {
+                _altActiveAtUtc = DateTime.UtcNow;  // 拦截成功，刷新活动时间
+                _queue.Writer.TryWrite(c);
+                InjectFakeKey();
+                return (IntPtr)1;
             }
         }
         return User32.CallNextHookEx(_hook, nCode, wParam, lParam);
+    }
+
+    private static void InjectFakeKey()
+    {
+        const ushort VK_F24 = 0x87;
+        // F24 down/up 打断 Alt-only 序列防菜单激活
+        // + Alt up 让应用视角下 Alt 松开（支持长按 Alt 多按 + PostMessage WM_CHAR 立即处理）
+        var inputs = new INPUT[]
+        {
+            new() { type = INPUT_TYPE.KEYBOARD,
+                    u = { ki = new KEYBDINPUT { wVk = VK_F24, dwFlags = KEYEVENTF.KEYDOWN } } },
+            new() { type = INPUT_TYPE.KEYBOARD,
+                    u = { ki = new KEYBDINPUT { wVk = VK_F24, dwFlags = KEYEVENTF.KEYUP } } },
+            new() { type = INPUT_TYPE.KEYBOARD,
+                    u = { ki = new KEYBDINPUT { wVk = (ushort)VK.MENU, dwFlags = KEYEVENTF.KEYUP } } },
+        };
+        User32.SendInput(3, inputs, Marshal.SizeOf<INPUT>());
     }
 
     private async Task ProcessQueueAsync()
@@ -99,6 +153,7 @@ internal sealed class HotkeyService : IDisposable
             }
         }
         catch (OperationCanceledException) { }
+        catch (Exception ex) { _log.LogError(ex, "ProcessQueueAsync 异常"); }
     }
 
     [DllImport("user32.dll")]

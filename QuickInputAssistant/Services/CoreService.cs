@@ -63,11 +63,78 @@ internal sealed class CoreService : IDisposable
 
     private void HandleDateKey()
     {
+        // 双击窗口内（第二次按 Alt+Q）→ 直接走日期状态机做 +1，跳过剪贴板探测
+        if (_date.IsInDoubleClickWindow)
+        {
+            InvokeDateHandle();
+            return;
+        }
+
+        // 快速路径：Edit 控件 + 无选区 → 直接 _date.Handle()
+        if (TryDirectDateOutput())
+            return;
+
+        // 同步剪贴板探测（不启动 Task）——保证 ProcessQueueAsync 串行处理每次 Alt+Q，
+        // 避免多个 Task 并发导致状态错乱和多次输出
+        var snap = _clipboard.Backup();
+        _clipboard.SendCtrlC();
+        string? newText = _clipboard.PollForChangeAsync(snap, timeoutMs: 80, intervalMs: 10)
+            .GetAwaiter().GetResult();
+        _clipboard.Restore(snap);
+
+        if (newText is not null)
+        {
+            var (ok, warn) = _date.TryBind(newText.Trim());
+            if (ok)
+            {
+                _status.Set(new StatusMessage { Tone = StatusTone.Success, Text = $"✅ ALT+Q 日期已绑定为 {_date.CurrentDate}" });
+                return;
+            }
+            _log.LogInformation("ALT+Q 选中文本格式非法（{Warn}），回退到日期状态机", warn);
+        }
+        InvokeDateHandle();
+    }
+
+    private void InvokeDateHandle()
+    {
         var (ok, warn) = _date.Handle();
         if (!ok && warn is not null)
             _status.Set(new StatusMessage { Tone = StatusTone.Warn, Text = $"⚠️ {warn}" });
         else
             _status.Set(new StatusMessage { Tone = StatusTone.Info, Text = $"✅ ALT+Q 日期: {_date.CurrentDate}" });
+    }
+
+    /// <summary>
+    /// Alt+Q 快速路径：Win32 Edit 控件且无选区时直接走日期状态机，跳过 80ms 剪贴板探测。
+    /// </summary>
+    private bool TryDirectDateOutput()
+    {
+        try
+        {
+            IntPtr fg = User32.GetForegroundWindow();
+            if (fg == IntPtr.Zero) return false;
+            uint tid = User32.GetWindowThreadProcessId(fg, out _);
+            var gti = new GUITHREADINFO { cbSize = Marshal.SizeOf<GUITHREADINFO>() };
+            if (!User32.GetGUIThreadInfo(tid, ref gti) || gti.hwndFocus == IntPtr.Zero)
+                return false;
+            var cls = new StringBuilder(64);
+            if (User32.GetClassName(gti.hwndFocus, cls, 64) == 0) return false;
+            if (!cls.ToString().Equals("Edit", StringComparison.OrdinalIgnoreCase)) return false;
+
+            IntPtr sel = User32.SendMessage(gti.hwndFocus, 0x00B0, IntPtr.Zero, IntPtr.Zero);
+            uint raw = (uint)(sel.ToInt64() & 0xFFFF_FFFF);
+            int selStart = (int)(raw & 0xFFFF);
+            int selEnd   = (int)(raw >> 16);
+            if (selStart != selEnd) return false; // 有选区 → 走绑定路径
+
+            InvokeDateHandle();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "TryDirectDateOutput 异常");
+            return false;
+        }
     }
 
     private void HandleStandardKey(char key)

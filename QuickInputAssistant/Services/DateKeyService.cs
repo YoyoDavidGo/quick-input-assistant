@@ -43,6 +43,12 @@ public sealed class DateKeyService
     /// <summary>返回当前绑定日期字符串（供 UI 显示）。</summary>
     public string CurrentDate => _store.Get('Q');
 
+    /// <summary>当前是否在 300ms 双击等待窗口内（即下一次 Alt+Q 会触发 +1）。</summary>
+    public bool IsInDoubleClickWindow
+    {
+        get { lock (_stateLock) return _state == State.WaitDouble; }
+    }
+
     /// <summary>
     /// 热键触发入口。
     /// 返回 (ok, warningMsg)：ok=false 表示格式非法且已报警。
@@ -120,17 +126,18 @@ public sealed class DateKeyService
         _doubleTimer = null;
         _state = State.Idle;
 
-        // 撤销第一次输出
-        if (HasEditableFocus() && _lastOutputLen > 0)
-            _input.SendBackspaces(_lastOutputLen);
-
         // 日期 +1
         string newDate = ComputeNext(_store.Get('Q'), +1);
         _store.Set('Q', newDate);
 
-        // 输出新日期
-        if (HasEditableFocus())
-            _input.TypeString(newDate);
+        // 原子操作：删除旧日期 + 输出新日期
+        // 用 EraseAndType 而非分开调用 SendBackspaces + TypeString，
+        // 避免中间焦点状态波动（tiptop 等应用在删除后短暂时 TypeString 会失败）
+        if (HasEditableFocus() && _lastOutputLen > 0)
+        {
+            _input.EraseAndType(_lastOutputLen, newDate);
+            _lastOutputLen = newDate.Length;
+        }
 
         _log.LogInformation("Alt+Q 日期顺延至: {Date}", newDate);
         return (true, null);
