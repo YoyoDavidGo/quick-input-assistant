@@ -58,7 +58,7 @@ public sealed class BindingStore : IDisposable
 
     private void Load()
     {
-        if (!File.Exists(FilePath)) return;
+        if (!File.Exists(FilePath)) { SetDefaults(); return; }
         try
         {
             byte[] encrypted = File.ReadAllBytes(FilePath);
@@ -79,6 +79,20 @@ public sealed class BindingStore : IDisposable
         {
             _log.LogError(ex, "加载 bindings.json 失败");
         }
+    }
+
+    private void SetDefaults()
+    {
+        _cache["1"] = "A700123";
+        _cache["2"] = "AHBM10";
+        _cache["3"] = "XX客户调试";
+        _cache["4"] = "火车/高铁费";
+        _cache["5"] = "高铁";
+        _cache["W"] = "住所";
+        _cache["E"] = "宾馆";
+        _cache["R"] = "客户现场";
+        SaveNow();
+        _log.LogInformation("已写入 {N} 条默认绑定", _cache.Count);
     }
 
     private void SaveNow()

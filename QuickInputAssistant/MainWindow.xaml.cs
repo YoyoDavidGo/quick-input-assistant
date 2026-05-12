@@ -260,7 +260,12 @@ public sealed partial class MainWindow : Window
         };
         border.PointerEntered += (s, _) => ((Border)s!).Background = BrCapHover;
         border.PointerExited  += (s, _) => ((Border)s!).Background = BrCapBg;
-        border.PointerPressed += (_, e) => { App.OnKeyCapClicked(key); e.Handled = true; };
+        border.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) _ = ShowEditDialogAsync(key);
+            else App.OnKeyCapClicked(key);
+            e.Handled = true;
+        };
 
         var stack = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 1 };
@@ -295,7 +300,12 @@ public sealed partial class MainWindow : Window
         };
         border.PointerEntered += (s, _) => ((Border)s!).Background = BrHoverBg;
         border.PointerExited  += (s, _) => ((Border)s!).Background = BrTransp;
-        border.PointerPressed += (_, e) => { App.OnKeyCapClicked(key); e.Handled = true; };
+        border.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) _ = ShowEditDialogAsync(key);
+            else App.OnKeyCapClicked(key);
+            e.Handled = true;
+        };
 
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
@@ -413,6 +423,44 @@ public sealed partial class MainWindow : Window
         StatusDot.Fill = brush;
         StatusText.Text = msg.Text;
         StatusText.Foreground = brush;
+    }
+
+    private async Task ShowEditDialogAsync(char key)
+    {
+        string current = key == 'Q' ? (App.DateSvc?.CurrentDate ?? "") : App.StoreSvc.Get(key);
+        var tb = new TextBox
+        {
+            Text = current,
+            PlaceholderText = key == 'Q' ? "YY/MM/DD 格式" : "输入绑定内容",
+            MinWidth = 260,
+            AcceptsReturn = false,
+        };
+        tb.Loaded += (_, _) => { tb.Focus(FocusState.Programmatic); tb.SelectAll(); };
+
+        var dlg = new ContentDialog
+        {
+            Title = $"编辑 Alt+{key}",
+            Content = tb,
+            PrimaryButtonText = "确定",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot,
+        };
+
+        if (await dlg.ShowAsync() != ContentDialogResult.Primary) return;
+
+        string newVal = tb.Text.Trim();
+        if (key == 'Q')
+        {
+            var (ok, warn) = App.DateSvc!.TryBind(newVal);
+            if (!ok)
+                App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Warn, Text = warn ?? "格式错误" });
+        }
+        else
+        {
+            App.StoreSvc.Set(key, newVal);
+        }
+        RefreshValues();
     }
 
     private void RefreshValues()
