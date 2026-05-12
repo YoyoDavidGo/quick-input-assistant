@@ -262,11 +262,12 @@ public sealed partial class MainWindow : Window
         border.PointerExited  += (s, _) => ((Border)s!).Background = BrCapBg;
         border.PointerPressed += (_, e) => { App.OnKeyCapClicked(key); e.Handled = true; };
 
-        var stack = new StackPanel { Spacing = 0 };
+        var stack = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 1 };
-        label.Children.Add(Txt("Alt", 9, BrFgMute, FontWeights.Medium));
-        label.Children.Add(Txt("+",   9, BrFgMute, FontWeights.Medium));
-        label.Children.Add(Txt(key.ToString(), 10, BrFg, FontWeights.Bold));
+        var tbAlt = Txt("Alt",            9, BrFgMute, FontWeights.Medium); tbAlt.VerticalAlignment = VerticalAlignment.Center;
+        var tbPlus= Txt("+",              9, BrFgMute, FontWeights.Medium); tbPlus.VerticalAlignment = VerticalAlignment.Center;
+        var tbKey = Txt(key.ToString(),   9, BrFg,     FontWeights.Bold);   tbKey.VerticalAlignment  = VerticalAlignment.Center;
+        label.Children.Add(tbAlt); label.Children.Add(tbPlus); label.Children.Add(tbKey);
         stack.Children.Add(label);
 
         var val = new TextBlock
