@@ -260,20 +260,15 @@ public sealed partial class MainWindow : Window
         };
         border.PointerEntered += (s, _) => ((Border)s!).Background = BrCapHover;
         border.PointerExited  += (s, _) => ((Border)s!).Background = BrCapBg;
-        border.PointerPressed += (_, e) =>
-        {
-            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) _ = ShowEditDialogAsync(key);
-            else App.OnKeyCapClicked(key);
-            e.Handled = true;
-        };
 
-        var stack = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        // display view
+        var displayView = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 1 };
         var tbAlt = Txt("Alt",            9, BrFgMute, FontWeights.Medium); tbAlt.VerticalAlignment = VerticalAlignment.Center;
         var tbPlus= Txt("+",              9, BrFgMute, FontWeights.Medium); tbPlus.VerticalAlignment = VerticalAlignment.Center;
         var tbKey = Txt(key.ToString(),   9, BrFg,     FontWeights.Bold);   tbKey.VerticalAlignment  = VerticalAlignment.Center;
         label.Children.Add(tbAlt); label.Children.Add(tbPlus); label.Children.Add(tbKey);
-        stack.Children.Add(label);
+        displayView.Children.Add(label);
 
         var val = new TextBlock
         {
@@ -284,9 +279,35 @@ public sealed partial class MainWindow : Window
             MaxLines = 1,
             IsHitTestVisible = false,
         };
-        stack.Children.Add(val);
+        displayView.Children.Add(val);
 
-        border.Child = stack;
+        // edit view (inline, 覆盖 displayView)
+        var editBox = new TextBox
+        {
+            FontSize = 10,
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+            Foreground = BrFg,
+            Background = new SolidColorBrush(Color.FromArgb(0x28, 0x4C, 0xC2, 0xFF)),
+            BorderBrush = BrAccent,
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(2, 0, 2, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            AcceptsReturn = false,
+            Visibility = Visibility.Collapsed,
+        };
+
+        var container = new Grid();
+        container.Children.Add(displayView);
+        container.Children.Add(editBox);
+        border.Child = container;
+
+        border.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) BeginEdit(key, displayView, editBox);
+            else App.OnKeyCapClicked(key);
+            e.Handled = true;
+        };
+
         reg[key] = val;
         return border;
     }
@@ -300,12 +321,6 @@ public sealed partial class MainWindow : Window
         };
         border.PointerEntered += (s, _) => ((Border)s!).Background = BrHoverBg;
         border.PointerExited  += (s, _) => ((Border)s!).Background = BrTransp;
-        border.PointerPressed += (_, e) =>
-        {
-            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) _ = ShowEditDialogAsync(key);
-            else App.OnKeyCapClicked(key);
-            e.Handled = true;
-        };
 
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
@@ -337,10 +352,36 @@ public sealed partial class MainWindow : Window
             MaxLines = 1,
             IsHitTestVisible = false,
         };
-        Grid.SetColumn(val, 1);
-        grid.Children.Add(val);
+
+        var valEdit = new TextBox
+        {
+            FontSize = 11,
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+            Foreground = BrFg,
+            Background = new SolidColorBrush(Color.FromArgb(0x28, 0x4C, 0xC2, 0xFF)),
+            BorderBrush = BrAccent,
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(2, 0, 2, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            AcceptsReturn = false,
+            Visibility = Visibility.Collapsed,
+        };
+
+        var valContainer = new Grid();
+        valContainer.Children.Add(val);
+        valContainer.Children.Add(valEdit);
+        Grid.SetColumn(valContainer, 1);
+        grid.Children.Add(valContainer);
 
         border.Child = grid;
+
+        border.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) BeginEdit(key, val, valEdit);
+            else App.OnKeyCapClicked(key);
+            e.Handled = true;
+        };
+
         reg[key] = val;
         return border;
     }
@@ -425,42 +466,68 @@ public sealed partial class MainWindow : Window
         StatusText.Foreground = brush;
     }
 
-    private async Task ShowEditDialogAsync(char key)
+    private void SetEditMode(bool editing)
+    {
+        try
+        {
+            int ex = User32.GetWindowLong(_hwnd, GWL.EXSTYLE);
+            if (editing) { ex &= ~WS_EX.NOACTIVATE; User32.SetWindowLong(_hwnd, GWL.EXSTYLE, ex); User32.SetForegroundWindow(_hwnd); }
+            else         { ex |=  WS_EX.NOACTIVATE; User32.SetWindowLong(_hwnd, GWL.EXSTYLE, ex); }
+        }
+        catch (Exception e) { _log.LogWarning(e, "SetEditMode 失败"); }
+    }
+
+    private void BeginEdit(char key, UIElement displayView, TextBox editBox)
     {
         string current = key == 'Q' ? (App.DateSvc?.CurrentDate ?? "") : App.StoreSvc.Get(key);
-        var tb = new TextBox
-        {
-            Text = current,
-            PlaceholderText = key == 'Q' ? "YY/MM/DD 格式" : "输入绑定内容",
-            MinWidth = 260,
-            AcceptsReturn = false,
-        };
-        tb.Loaded += (_, _) => { tb.Focus(FocusState.Programmatic); tb.SelectAll(); };
+        displayView.Visibility = Visibility.Collapsed;
+        editBox.Text = current;
+        editBox.Visibility = Visibility.Visible;
+        SetEditMode(true);
+        editBox.Focus(FocusState.Programmatic);
+        editBox.SelectAll();
 
-        var dlg = new ContentDialog
-        {
-            Title = $"编辑 Alt+{key}",
-            Content = tb,
-            PrimaryButtonText = "确定",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = Content.XamlRoot,
-        };
+        bool done = false;
 
-        if (await dlg.ShowAsync() != ContentDialogResult.Primary) return;
-
-        string newVal = tb.Text.Trim();
-        if (key == 'Q')
+        void EndEdit()
         {
-            var (ok, warn) = App.DateSvc!.TryBind(newVal);
-            if (!ok)
-                App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Warn, Text = warn ?? "格式错误" });
+            editBox.KeyDown -= OnKeyDown;
+            editBox.LostFocus -= OnLostFocus;
+            editBox.Visibility = Visibility.Collapsed;
+            displayView.Visibility = Visibility.Visible;
+            SetEditMode(false);
         }
-        else
+
+        void Commit()
         {
-            App.StoreSvc.Set(key, newVal);
+            if (done) return;
+            done = true;
+            string newVal = editBox.Text.Trim();
+            if (key == 'Q')
+            {
+                var (ok, warn) = App.DateSvc!.TryBind(newVal);
+                if (!ok) App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Warn, Text = warn ?? "格式错误" });
+            }
+            else
+            {
+                App.StoreSvc.Set(key, newVal);
+            }
+            EndEdit();
+            RefreshValues();
         }
-        RefreshValues();
+
+        void Cancel() { if (done) return; done = true; EndEdit(); }
+
+        void OnKeyDown(object s, KeyRoutedEventArgs e)
+        {
+            if (e.Key == Windows.System.VirtualKey.Enter) { Commit(); e.Handled = true; }
+            else if (e.Key == Windows.System.VirtualKey.Escape) { Cancel(); e.Handled = true; }
+        }
+
+        void OnLostFocus(object s, RoutedEventArgs e) => Commit();
+
+        editBox.KeyDown += OnKeyDown;
+        editBox.LostFocus += OnLostFocus;
     }
 
     private void RefreshValues()
