@@ -43,7 +43,11 @@ public sealed partial class MainWindow : Window
     private const string ICON_LIST     = ""; // List
     private const string ICON_UP       = ""; // ChevronUp
     private const string ICON_DOWN     = ""; // ChevronDown
+    private const string ICON_SETTINGS = ""; // Setting (gear)
     private static readonly FontFamily IconFont = new("Segoe Fluent Icons, Segoe MDL2 Assets");
+
+    // 状态栏齿轮按钮左侧显示当前预设名（由 RebuildActionButtons 创建）
+    private TextBlock? _presetNameText;
 
     private static readonly char[] Row1 = { '1', '2', '3', '4', '5', '6' };
     private static readonly char[] Row2 = { 'Q', 'W', 'E', 'R' };
@@ -75,6 +79,16 @@ public sealed partial class MainWindow : Window
         ConfigureWindow();
         PopulateUI();
         App.StatusSvc.StatusChanged += OnStatusChanged;
+        App.StoreSvc.ActiveSlotChanged += OnActiveSlotChanged;
+    }
+
+    private void OnActiveSlotChanged(int slot)
+    {
+        DispatcherQueue?.TryEnqueue(() =>
+        {
+            if (_presetNameText != null) _presetNameText.Text = App.StoreSvc.GetSlotName(slot);
+            RefreshValues();
+        });
     }
 
     private void ConfigureWindow()
@@ -439,10 +453,29 @@ public sealed partial class MainWindow : Window
         return border;
     }
 
-    // 三种模式都是 2 个固定尺寸按钮，用 Segoe Fluent 图标确保字形一致
+    // 三种模式都是 2 个固定尺寸按钮（加预设名 + 齿轮固定在前），用 Segoe Fluent 图标确保字形一致
     private void RebuildActionButtons()
     {
         ActionButtons.Children.Clear();
+
+        // 预设名（齿轮左侧）
+        _presetNameText = new TextBlock
+        {
+            Text = App.StoreSvc.GetSlotName(App.StoreSvc.ActiveSlot),
+            FontSize = 11,
+            Foreground = BrFgMute,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 4, 0),
+            MaxWidth = 90,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            IsHitTestVisible = false,
+        };
+        ActionButtons.Children.Add(_presetNameText);
+
+        // 齿轮（设置）按钮 - 始终显示
+        ActionButtons.Children.Add(MakeGearButton());
+
+        // 模式切换 / 折叠按钮
         if (_mode == ViewMode.Capsule)
         {
             ActionButtons.Children.Add(MakeActionBtn(ICON_LIST, OnSwitchToList));
@@ -458,6 +491,216 @@ public sealed partial class MainWindow : Window
             ActionButtons.Children.Add(MakeActionBtn(ICON_KEYBOARD, OnSwitchToKB));
             ActionButtons.Children.Add(MakeActionBtn(ICON_UP,       OnCollapse));
         }
+    }
+
+    private Border MakeGearButton()
+    {
+        var b = new Border
+        {
+            Width = BTN_SZ, Height = BTN_SZ,
+            CornerRadius = new CornerRadius(3),
+            Background = BrTransp,
+        };
+        var flyout = BuildSettingsFlyout();
+        b.PointerPressed += (s, e) =>
+        {
+            flyout.ShowAt((FrameworkElement)s!);
+            e.Handled = true;
+        };
+        b.PointerEntered += (s, _) => ((Border)s!).Background = BrHoverBg;
+        b.PointerExited  += (s, _) => ((Border)s!).Background = BrTransp;
+        b.Child = new TextBlock
+        {
+            Text = ICON_SETTINGS,
+            FontFamily = IconFont,
+            FontSize = 11,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+            IsHitTestVisible = false,
+        };
+        return b;
+    }
+
+    // ── 弹窗样式工厂：让 Flyout / MenuFlyout 符合软件深色风格 ───────────
+    private static readonly SolidColorBrush BrFlyoutBg     = new(Color.FromArgb(0xF2, 0x1A, 0x1A, 0x1E));
+    private static readonly SolidColorBrush BrFlyoutBorder = new(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
+
+    private static Style MakeDarkMenuStyle()
+    {
+        var s = new Style(typeof(MenuFlyoutPresenter));
+        s.Setters.Add(new Setter(Control.BackgroundProperty,      BrFlyoutBg));
+        s.Setters.Add(new Setter(Control.BorderBrushProperty,     BrFlyoutBorder));
+        s.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
+        s.Setters.Add(new Setter(Control.CornerRadiusProperty,    new CornerRadius(8)));
+        s.Setters.Add(new Setter(Control.FontSizeProperty,        11.0));
+        s.Setters.Add(new Setter(Control.PaddingProperty,         new Thickness(4)));
+        s.Setters.Add(new Setter(FrameworkElement.RequestedThemeProperty, ElementTheme.Dark));
+        return s;
+    }
+
+    private static Style MakeDarkFlyoutStyle()
+    {
+        var s = new Style(typeof(FlyoutPresenter));
+        s.Setters.Add(new Setter(Control.BackgroundProperty,      BrFlyoutBg));
+        s.Setters.Add(new Setter(Control.BorderBrushProperty,     BrFlyoutBorder));
+        s.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
+        s.Setters.Add(new Setter(Control.CornerRadiusProperty,    new CornerRadius(10)));
+        s.Setters.Add(new Setter(Control.PaddingProperty,         new Thickness(12)));
+        s.Setters.Add(new Setter(Control.FontSizeProperty,        11.0));
+        s.Setters.Add(new Setter(FrameworkElement.RequestedThemeProperty, ElementTheme.Dark));
+        return s;
+    }
+
+    private MenuFlyout BuildSettingsFlyout()
+    {
+        var flyout = new MenuFlyout
+        {
+            MenuFlyoutPresenterStyle = MakeDarkMenuStyle(),
+            ShouldConstrainToRootBounds = false,
+        };
+
+        var help = MakeMenuItem("帮助");
+        help.Click += OnHelpClicked;
+        flyout.Items.Add(help);
+
+        var theme = MakeMenuItem("切换主题");
+        theme.Click += OnThemeClicked;
+        flyout.Items.Add(theme);
+
+        var presetSub = new MenuFlyoutSubItem { Text = "预设管理", FontSize = 11, MinHeight = 0, Padding = new Thickness(10, 4, 10, 4) };
+        flyout.Items.Add(presetSub);
+
+        flyout.Items.Add(new MenuFlyoutSeparator());
+
+        var exit = MakeMenuItem("退出应用");
+        exit.Click += OnExitClicked;
+        flyout.Items.Add(exit);
+
+        // 每次打开时重建预设子菜单（反映当前 active）
+        flyout.Opening += (_, _) => BuildPresetSubmenu(presetSub);
+        return flyout;
+    }
+
+    private void BuildPresetSubmenu(MenuFlyoutSubItem parent)
+    {
+        parent.Items.Clear();
+        int active = App.StoreSvc.ActiveSlot;
+        for (int i = 0; i < App.StoreSvc.SlotTotal; i++)
+        {
+            int slot = i;
+            var item = MakeMenuItem((slot == active ? "● " : "    ") + App.StoreSvc.GetSlotName(slot));
+            item.Click += (_, _) => App.StoreSvc.SwitchSlot(slot);
+            parent.Items.Add(item);
+        }
+        parent.Items.Add(new MenuFlyoutSeparator());
+        var rename = MakeMenuItem("重命名当前预设…");
+        rename.Click += OnRenameCurrentClicked;
+        parent.Items.Add(rename);
+    }
+
+    private static MenuFlyoutItem MakeMenuItem(string text) => new()
+    {
+        Text = text,
+        FontSize = 11,
+        MinHeight = 0,
+        Padding = new Thickness(10, 4, 10, 4),
+    };
+
+    private void OnHelpClicked(object sender, RoutedEventArgs e)
+    {
+        string text =
+            "【输出绑定文字】\n" +
+            "• 按 Alt+1~6 / Q-R / A-F 任一组合键，输出绑定的文字到当前焦点窗口\n" +
+            "• 或直接单击 UI 上的按键\n\n" +
+            "【日期键 Alt+Q】\n" +
+            "• 单击：输出今日日期 (YY/MM/DD)\n" +
+            "• 双击：撤销前一次并改为 +1 天\n\n" +
+            "【修改绑定】\n" +
+            "• 鼠标右击 UI 上的按键 → 直接在键帽内编辑文字 → 回车保存\n" +
+            "• 或在外部应用先选中文字 → 按 Alt+键 自动绑定\n\n" +
+            "【预设】\n" +
+            "• 4 套独立绑定，可命名、可切换\n" +
+            "• 齿轮菜单 → 预设管理";
+        var tb = new TextBlock
+        {
+            Text = text,
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = BrFg,
+            LineHeight = 17,
+        };
+        var sv = new ScrollViewer { MaxHeight = 320, MaxWidth = 360, Content = tb };
+        var flyout = new Flyout
+        {
+            Content = sv,
+            FlyoutPresenterStyle = MakeDarkFlyoutStyle(),
+            ShouldConstrainToRootBounds = false,
+        };
+        flyout.ShowAt(StatusBar);
+    }
+
+    private void OnThemeClicked(object sender, RoutedEventArgs e)
+    {
+        App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Info, Text = "浅色主题暂未实现（下次提交）" });
+    }
+
+    private void OnExitClicked(object sender, RoutedEventArgs e)
+    {
+        Microsoft.UI.Xaml.Application.Current.Exit();
+    }
+
+    private void OnRenameCurrentClicked(object sender, RoutedEventArgs e)
+    {
+        int active = App.StoreSvc.ActiveSlot;
+        var tb = new TextBox
+        {
+            Text = App.StoreSvc.GetSlotName(active),
+            Width = 200,
+            FontSize = 11,
+            PlaceholderText = $"预设{active + 1}",
+        };
+        var okBtn     = new Button { Content = "确定", FontSize = 11, MinWidth = 56, Padding = new Thickness(8, 3, 8, 3) };
+        var cancelBtn = new Button { Content = "取消", FontSize = 11, MinWidth = 56, Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(6, 0, 0, 0) };
+        var btnRow    = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        btnRow.Children.Add(okBtn);
+        btnRow.Children.Add(cancelBtn);
+        var panel = new StackPanel { Spacing = 6, MinWidth = 220 };
+        panel.Children.Add(new TextBlock { Text = "重命名预设", FontSize = 11, FontWeight = FontWeights.SemiBold });
+        panel.Children.Add(tb);
+        panel.Children.Add(btnRow);
+
+        var flyout = new Flyout
+        {
+            Content = panel,
+            FlyoutPresenterStyle = MakeDarkFlyoutStyle(),
+            ShouldConstrainToRootBounds = false,
+        };
+        void DoOk()
+        {
+            App.StoreSvc.RenameSlot(active, tb.Text);
+            if (_presetNameText != null) _presetNameText.Text = App.StoreSvc.GetSlotName(active);
+            flyout.Hide();
+            SetEditMode(false);
+            App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Success, Text = $"预设已重命名为 \"{App.StoreSvc.GetSlotName(active)}\"" });
+        }
+        void DoCancel() { flyout.Hide(); SetEditMode(false); }
+        okBtn.Click     += (_, _) => DoOk();
+        cancelBtn.Click += (_, _) => DoCancel();
+        tb.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Windows.System.VirtualKey.Enter)      { DoOk();     ke.Handled = true; }
+            else if (ke.Key == Windows.System.VirtualKey.Escape){ DoCancel(); ke.Handled = true; }
+        };
+        flyout.Closed += (_, _) => SetEditMode(false);
+
+        SetEditMode(true);  // 解除 WS_EX_NOACTIVATE 以便 TextBox 接收键盘输入
+        flyout.ShowAt(StatusBar);
+        tb.Loaded += (_, _) =>
+        {
+            tb.Focus(FocusState.Programmatic);
+            tb.SelectAll();
+        };
     }
 
     private Border MakeActionBtn(string icon, PointerEventHandler handler)
