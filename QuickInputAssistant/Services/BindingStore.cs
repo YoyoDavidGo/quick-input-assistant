@@ -7,11 +7,13 @@ using System.Text.Json;
 namespace QuickInputAssistant.Services;
 
 /// <summary>
-/// 14 个键位绑定值的持久化存储，DPAPI 加密，原子写入，防抖 1 秒。
+/// 14 个键位绑定值的持久化存储。支持 4 套预设：每套有名字和独立绑定字典，
+/// Get/Set 始终作用于活动预设。DPAPI 加密，原子写入，防抖 1 秒。
 /// </summary>
 public sealed class BindingStore : IDisposable
 {
     private const int MaxLength = 500;
+    private const int SlotCount = 4;
     private static readonly string DataDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "QuickInputAssistant");
@@ -19,10 +21,14 @@ public sealed class BindingStore : IDisposable
     private static readonly string TmpFilePath = FilePath + ".tmp";
 
     private readonly ILogger<BindingStore> _log;
-    private readonly Dictionary<string, string> _cache = new();
+    private readonly List<PresetSlot> _slots = new();
+    private int _activeIndex;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private System.Threading.Timer? _debounceTimer;
     private readonly object _debounceLock = new();
+
+    /// <summary>切换活动预设后触发（参数为新的 active index）</summary>
+    public event Action<int>? ActiveSlotChanged;
 
     public BindingStore(ILogger<BindingStore> logger)
     {
@@ -31,17 +37,49 @@ public sealed class BindingStore : IDisposable
         Load();
     }
 
-    // ── 读写接口 ──────────────────────────────────────────────────────
+    // ── 当前活动预设的读写 ─────────────────────────────────────────────
 
     public string Get(char key) =>
-        _cache.TryGetValue(key.ToString(), out var v) ? v : "";
+        _slots[_activeIndex].Bindings.TryGetValue(key.ToString(), out var v) ? v : "";
 
     public void Set(char key, string value)
     {
         value = Sanitize(value);
-        _cache[key.ToString()] = value;
+        _slots[_activeIndex].Bindings[key.ToString()] = value;
         ScheduleSave();
     }
+
+    // ── 预设管理 ─────────────────────────────────────────────────────
+
+    public int ActiveSlot => _activeIndex;
+    public int SlotTotal  => SlotCount;
+
+    public string GetSlotName(int index)
+    {
+        if (index < 0 || index >= SlotCount) return "";
+        var n = _slots[index].Name;
+        return string.IsNullOrWhiteSpace(n) ? DefaultName(index) : n;
+    }
+
+    public void RenameSlot(int index, string newName)
+    {
+        if (index < 0 || index >= SlotCount) return;
+        newName = (newName ?? "").Trim();
+        if (newName.Length > 20) newName = newName[..20];
+        _slots[index].Name = newName;
+        ScheduleSave();
+    }
+
+    public void SwitchSlot(int index)
+    {
+        if (index < 0 || index >= SlotCount || index == _activeIndex) return;
+        Flush();  // 切换前强制把当前修改落盘
+        _activeIndex = index;
+        SaveNow();
+        ActiveSlotChanged?.Invoke(index);
+    }
+
+    private static string DefaultName(int index) => $"预设{index + 1}";
 
     /// <summary>应用退出时强制 flush。</summary>
     public void Flush()
@@ -58,22 +96,39 @@ public sealed class BindingStore : IDisposable
 
     private void Load()
     {
-        if (!File.Exists(FilePath)) { SetDefaults(); return; }
+        // 初始化 4 个空槽位（即便后续 Load 失败也保证 _slots 长度=4）
+        EnsureSlotsInitialized();
+
+        if (!File.Exists(FilePath)) { SetDefaultsForFirstInstall(); return; }
         try
         {
             byte[] encrypted = File.ReadAllBytes(FilePath);
             byte[] plain = ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser);
             var data = JsonSerializer.Deserialize<BindingsData>(Encoding.UTF8.GetString(plain));
-            if (data?.Bindings is not null)
+            if (data == null) { SetDefaultsForFirstInstall(); return; }
+
+            // v1 迁移：根 Bindings 字典 → slot 0
+            if ((data.Slots == null || data.Slots.Count == 0) && data.Bindings != null && data.Bindings.Count > 0)
             {
-                foreach (var (k, v) in data.Bindings)
-                    _cache[k] = v;
+                _slots[0].Bindings = new Dictionary<string, string>(data.Bindings);
+                _log.LogInformation("从 v1 格式迁移 {N} 条绑定到预设 1", data.Bindings.Count);
+                SaveNow();
+                return;
             }
-            _log.LogInformation("已加载 {N} 条绑定", _cache.Count);
+
+            // v2 正常加载
+            _activeIndex = Math.Clamp(data.ActiveSlot, 0, SlotCount - 1);
+            for (int i = 0; i < Math.Min(SlotCount, data.Slots!.Count); i++)
+            {
+                _slots[i].Name     = data.Slots[i].Name ?? "";
+                _slots[i].Bindings = data.Slots[i].Bindings ?? new();
+            }
+            _log.LogInformation("已加载预设 active={A}，slot0 共 {N} 条", _activeIndex, _slots[0].Bindings.Count);
         }
         catch (CryptographicException)
         {
             _log.LogWarning("bindings.json 解密失败（可能来自其他用户/机器），已重置");
+            SetDefaultsForFirstInstall();
         }
         catch (Exception ex)
         {
@@ -81,18 +136,27 @@ public sealed class BindingStore : IDisposable
         }
     }
 
-    private void SetDefaults()
+    private void EnsureSlotsInitialized()
     {
-        _cache["1"] = "A700123";
-        _cache["2"] = "AHBM10";
-        _cache["3"] = "XX客户调试";
-        _cache["4"] = "火车/高铁费";
-        _cache["5"] = "高铁";
-        _cache["W"] = "住所";
-        _cache["E"] = "宾馆";
-        _cache["R"] = "客户现场";
+        _slots.Clear();
+        for (int i = 0; i < SlotCount; i++)
+            _slots.Add(new PresetSlot { Name = "", Bindings = new() });
+    }
+
+    private void SetDefaultsForFirstInstall()
+    {
+        // 仅预设 1 写入初始值
+        var b = _slots[0].Bindings;
+        b["1"] = "A700123";
+        b["2"] = "AHBM10";
+        b["3"] = "XX客户调试";
+        b["4"] = "火车/高铁费";
+        b["5"] = "高铁";
+        b["W"] = "住所";
+        b["E"] = "宾馆";
+        b["R"] = "客户现场";
         SaveNow();
-        _log.LogInformation("已写入 {N} 条默认绑定", _cache.Count);
+        _log.LogInformation("首次安装：已写入 {N} 条默认绑定到预设 1", b.Count);
     }
 
     private void SaveNow()
@@ -101,7 +165,13 @@ public sealed class BindingStore : IDisposable
         {
             var data = new BindingsData
             {
-                Bindings = new Dictionary<string, string>(_cache),
+                Version = 2,
+                ActiveSlot = _activeIndex,
+                Slots = _slots.Select(s => new PresetSlot
+                {
+                    Name = s.Name,
+                    Bindings = new Dictionary<string, string>(s.Bindings),
+                }).ToList(),
                 LastUpdated = DateTimeOffset.Now,
             };
             byte[] plain = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(data));

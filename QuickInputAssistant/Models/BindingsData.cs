@@ -2,7 +2,17 @@ namespace QuickInputAssistant.Models;
 
 internal sealed class BindingsData
 {
-    public int Version { get; set; } = 1;
-    public Dictionary<string, string> Bindings { get; set; } = new();
+    public int Version { get; set; } = 2;
+    public int ActiveSlot { get; set; }
+    public List<PresetSlot> Slots { get; set; } = new();
     public DateTimeOffset LastUpdated { get; set; } = DateTimeOffset.Now;
+
+    /// <summary>v1 旧字段：仅用于反序列化迁移到 Slots，不应再写入</summary>
+    public Dictionary<string, string>? Bindings { get; set; }
+}
+
+internal sealed class PresetSlot
+{
+    public string Name { get; set; } = "";
+    public Dictionary<string, string> Bindings { get; set; } = new();
 }

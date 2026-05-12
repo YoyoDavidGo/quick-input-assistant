@@ -14,6 +14,7 @@
 
             <!-- ═══ Status Bar：三种模式完全统一 ═══ -->
             <Border x:Name="StatusBar" CornerRadius="15" Height="30"
+                    Width="344" HorizontalAlignment="Center"
                     Background="#F0141416"
                     Padding="10,0,4,0"
                     PointerPressed="OnDragAreaPressed"

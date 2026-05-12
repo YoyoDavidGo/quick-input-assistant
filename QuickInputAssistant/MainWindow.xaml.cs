@@ -261,14 +261,12 @@ public sealed partial class MainWindow : Window
         border.PointerEntered += (s, _) => ((Border)s!).Background = BrCapHover;
         border.PointerExited  += (s, _) => ((Border)s!).Background = BrCapBg;
 
-        // display view
-        var displayView = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        // label 行永远可见
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 1 };
         var tbAlt = Txt("Alt",            9, BrFgMute, FontWeights.Medium); tbAlt.VerticalAlignment = VerticalAlignment.Center;
         var tbPlus= Txt("+",              9, BrFgMute, FontWeights.Medium); tbPlus.VerticalAlignment = VerticalAlignment.Center;
         var tbKey = Txt(key.ToString(),   9, BrFg,     FontWeights.Bold);   tbKey.VerticalAlignment  = VerticalAlignment.Center;
         label.Children.Add(tbAlt); label.Children.Add(tbPlus); label.Children.Add(tbKey);
-        displayView.Children.Add(label);
 
         var val = new TextBlock
         {
@@ -279,37 +277,91 @@ public sealed partial class MainWindow : Window
             MaxLines = 1,
             IsHitTestVisible = false,
         };
-        displayView.Children.Add(val);
 
-        // edit view (inline, 覆盖 displayView)
+        // editBox：完全透明，覆盖 val 区域，不改变键帽外观
         var editBox = new TextBox
         {
             FontSize = 10,
             FontFamily = new FontFamily("Cascadia Mono, Consolas"),
             Foreground = BrFg,
-            Background = new SolidColorBrush(Color.FromArgb(0x28, 0x4C, 0xC2, 0xFF)),
-            BorderBrush = BrAccent,
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(2, 0, 2, 0),
+            Background = BrTransp,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
             VerticalAlignment = VerticalAlignment.Center,
             AcceptsReturn = false,
             Visibility = Visibility.Collapsed,
         };
+        ApplyTransparentTextBoxStyle(editBox);
 
-        var container = new Grid();
-        container.Children.Add(displayView);
-        container.Children.Add(editBox);
-        border.Child = container;
+        // 锁死高度 14px（≈ FontSize=10 的自然行高），防止 TextBox 内部模板撑大父容器挤掉 label
+        var valContainer = new Grid { Height = 14 };
+        valContainer.Children.Add(val);
+        valContainer.Children.Add(editBox);
+
+        var stack = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        stack.Children.Add(label);
+        stack.Children.Add(valContainer);
+        border.Child = stack;
 
         border.PointerPressed += (_, e) =>
         {
-            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) BeginEdit(key, displayView, editBox);
+            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) BeginEdit(key, val, editBox, border);
             else App.OnKeyCapClicked(key);
             e.Handled = true;
         };
 
         reg[key] = val;
         return border;
+    }
+
+    private static void HideTextBoxDeleteButton(TextBox tb)
+    {
+        // WinUI 3 TextBox 内置 DeleteButton（X 按钮），单纯设 Visibility 会被 VisualState 反复重置。
+        // 同时把 MaxWidth/MinWidth/Width 全归零，从布局层面剥夺它的空间
+        if (FindDescendantByName(tb, "DeleteButton") is FrameworkElement btn)
+        {
+            btn.MinWidth = 0;
+            btn.MaxWidth = 0;
+            btn.Width    = 0;
+            btn.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static FrameworkElement? FindDescendantByName(DependencyObject parent, string name)
+    {
+        int count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is FrameworkElement fe && fe.Name == name) return fe;
+            var deeper = FindDescendantByName(child, name);
+            if (deeper != null) return deeper;
+        }
+        return null;
+    }
+
+    private static void ApplyTransparentTextBoxStyle(TextBox tb)
+    {
+        // 覆盖 WinUI 3 TextBox 主题资源：背景/边框/前景全透明化，
+        // 否则即使设了 Background/Foreground 属性，焦点/悬浮状态会被主题刷子覆盖
+        tb.Resources["TextControlBorderBrush"]            = BrTransp;
+        tb.Resources["TextControlBorderBrushPointerOver"] = BrTransp;
+        tb.Resources["TextControlBorderBrushFocused"]     = BrTransp;
+        tb.Resources["TextControlBorderBrushDisabled"]    = BrTransp;
+        tb.Resources["TextControlBackground"]             = BrTransp;
+        tb.Resources["TextControlBackgroundPointerOver"]  = BrTransp;
+        tb.Resources["TextControlBackgroundFocused"]      = BrTransp;
+        tb.Resources["TextControlBackgroundDisabled"]     = BrTransp;
+        // 前景：必须显式覆盖，否则文字不可见
+        tb.Resources["TextControlForeground"]             = BrFg;
+        tb.Resources["TextControlForegroundPointerOver"]  = BrFg;
+        tb.Resources["TextControlForegroundFocused"]      = BrFg;
+        tb.Resources["TextControlForegroundDisabled"]     = BrFg;
+        // 去掉 TextBox 内部主题 padding（默认上下各 5-6px）和最小高度（默认 32px），
+        // 否则会把整个键帽撑满，挤掉上方 label
+        tb.Resources["TextControlThemePadding"]           = new Thickness(0);
+        tb.MinHeight = 0;
+        tb.MinWidth  = 0;
     }
 
     private Border MakeListRow(char key, Dictionary<char, TextBlock> reg)
@@ -358,16 +410,17 @@ public sealed partial class MainWindow : Window
             FontSize = 11,
             FontFamily = new FontFamily("Cascadia Mono, Consolas"),
             Foreground = BrFg,
-            Background = new SolidColorBrush(Color.FromArgb(0x28, 0x4C, 0xC2, 0xFF)),
-            BorderBrush = BrAccent,
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(2, 0, 2, 0),
+            Background = BrTransp,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
             VerticalAlignment = VerticalAlignment.Center,
             AcceptsReturn = false,
             Visibility = Visibility.Collapsed,
         };
+        ApplyTransparentTextBoxStyle(valEdit);
 
-        var valContainer = new Grid();
+        // 锁死高度 16px（≈ FontSize=11 的自然行高）
+        var valContainer = new Grid { Height = 16 };
         valContainer.Children.Add(val);
         valContainer.Children.Add(valEdit);
         Grid.SetColumn(valContainer, 1);
@@ -377,7 +430,7 @@ public sealed partial class MainWindow : Window
 
         border.PointerPressed += (_, e) =>
         {
-            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) BeginEdit(key, val, valEdit);
+            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) BeginEdit(key, val, valEdit, border);
             else App.OnKeyCapClicked(key);
             e.Handled = true;
         };
@@ -477,15 +530,34 @@ public sealed partial class MainWindow : Window
         catch (Exception e) { _log.LogWarning(e, "SetEditMode 失败"); }
     }
 
-    private void BeginEdit(char key, UIElement displayView, TextBox editBox)
+    private void BeginEdit(char key, UIElement displayView, TextBox editBox, Border capBorder)
     {
         string current = key == 'Q' ? (App.DateSvc?.CurrentDate ?? "") : App.StoreSvc.Get(key);
-        displayView.Visibility = Visibility.Collapsed;
+
+        // 编辑态视觉：键帽边框换 accent 色加粗
+        var origBrush = capBorder.BorderBrush;
+        var origThickness = capBorder.BorderThickness;
+        capBorder.BorderBrush = BrAccent;
+        capBorder.BorderThickness = new Thickness(1);
+
+        displayView.Opacity = 0;  // 保留布局高度
         editBox.Text = current;
         editBox.Visibility = Visibility.Visible;
         SetEditMode(true);
-        editBox.Focus(FocusState.Programmatic);
-        editBox.SelectAll();
+
+        // VisualState 会反复把 DeleteButton 设回 Visible，必须每次 TextChanged/GotFocus 重新隐藏
+        void OnTextChangedHide(object s, TextChangedEventArgs _) => HideTextBoxDeleteButton(editBox);
+        void OnGotFocusHide(object s, RoutedEventArgs _)        => HideTextBoxDeleteButton(editBox);
+        editBox.TextChanged += OnTextChangedHide;
+        editBox.GotFocus    += OnGotFocusHide;
+
+        // 延迟 Focus：让 SetForegroundWindow 消息先到达窗口；同时此时 TextBox 模板已应用，可隐藏内置 X 按钮
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal, () =>
+        {
+            HideTextBoxDeleteButton(editBox);
+            editBox.Focus(FocusState.Programmatic);
+            editBox.SelectAll();
+        });
 
         bool done = false;
 
@@ -493,8 +565,12 @@ public sealed partial class MainWindow : Window
         {
             editBox.KeyDown -= OnKeyDown;
             editBox.LostFocus -= OnLostFocus;
+            editBox.TextChanged -= OnTextChangedHide;
+            editBox.GotFocus    -= OnGotFocusHide;
             editBox.Visibility = Visibility.Collapsed;
-            displayView.Visibility = Visibility.Visible;
+            displayView.Opacity = 1;
+            capBorder.BorderBrush = origBrush;
+            capBorder.BorderThickness = origThickness;
             SetEditMode(false);
         }
 
@@ -503,10 +579,11 @@ public sealed partial class MainWindow : Window
             if (done) return;
             done = true;
             string newVal = editBox.Text.Trim();
+            bool ok = true;
+            string? warn = null;
             if (key == 'Q')
             {
-                var (ok, warn) = App.DateSvc!.TryBind(newVal);
-                if (!ok) App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Warn, Text = warn ?? "格式错误" });
+                (ok, warn) = App.DateSvc!.TryBind(newVal);
             }
             else
             {
@@ -514,6 +591,20 @@ public sealed partial class MainWindow : Window
             }
             EndEdit();
             RefreshValues();
+            if (ok)
+            {
+                App.StatusSvc?.Set(new StatusMessage
+                {
+                    Tone = StatusTone.Success,
+                    Text = string.IsNullOrEmpty(newVal)
+                        ? $"已清空 ALT+{key} 绑定"
+                        : $"设置 ALT+{key} 为 \"{newVal}\" 成功",
+                });
+            }
+            else
+            {
+                App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Warn, Text = warn ?? "格式错误" });
+            }
         }
 
         void Cancel() { if (done) return; done = true; EndEdit(); }
