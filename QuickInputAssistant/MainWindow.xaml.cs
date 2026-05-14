@@ -49,6 +49,10 @@ public sealed partial class MainWindow : Window
     // 状态栏齿轮按钮左侧显示当前预设名（由 RebuildActionButtons 创建）
     private TextBlock? _presetNameText;
 
+    // 编辑态期间所有外部点击都路由到这两个委托：左键=提交、右键=取消
+    private Action? _activeEditCommit;
+    private Action? _activeEditCancel;
+
     private static readonly char[] Row1 = { '1', '2', '3', '4', '5', '6' };
     private static readonly char[] Row2 = { 'Q', 'W', 'E', 'R' };
     private static readonly char[] Row3 = { 'A', 'S', 'D', 'F' };
@@ -319,7 +323,16 @@ public sealed partial class MainWindow : Window
 
         border.PointerPressed += (_, e) =>
         {
-            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) BeginEdit(key, val, editBox, border);
+            var props = e.GetCurrentPoint(null).Properties;
+            // 编辑态下键帽点击仅作「确认/取消」，不输出绑定字符
+            if (_activeEditCommit != null)
+            {
+                if (props.IsRightButtonPressed) _activeEditCancel?.Invoke();
+                else _activeEditCommit?.Invoke();
+                e.Handled = true;
+                return;
+            }
+            if (props.IsRightButtonPressed) BeginEdit(key, val, editBox, border);
             else App.OnKeyCapClicked(key);
             e.Handled = true;
         };
@@ -444,7 +457,15 @@ public sealed partial class MainWindow : Window
 
         border.PointerPressed += (_, e) =>
         {
-            if (e.GetCurrentPoint(null).Properties.IsRightButtonPressed) BeginEdit(key, val, valEdit, border);
+            var props = e.GetCurrentPoint(null).Properties;
+            if (_activeEditCommit != null)
+            {
+                if (props.IsRightButtonPressed) _activeEditCancel?.Invoke();
+                else _activeEditCommit?.Invoke();
+                e.Handled = true;
+                return;
+            }
+            if (props.IsRightButtonPressed) BeginEdit(key, val, valEdit, border);
             else App.OnKeyCapClicked(key);
             e.Handled = true;
         };
@@ -804,12 +825,25 @@ public sealed partial class MainWindow : Window
 
         bool done = false;
 
+        // 编辑态期间监听 RootGrid 点击：左键外击 = 提交，右键外击 = 取消
+        void OnRootOutsideClick(object s, PointerRoutedEventArgs e)
+        {
+            if (done) return;
+            var props = e.GetCurrentPoint(null).Properties;
+            if (props.IsRightButtonPressed) { Cancel(); e.Handled = true; }
+            else if (props.IsLeftButtonPressed) { Commit(); e.Handled = true; }
+        }
+        RootGrid.PointerPressed += OnRootOutsideClick;
+
         void EndEdit()
         {
             editBox.KeyDown -= OnKeyDown;
             editBox.LostFocus -= OnLostFocus;
             editBox.TextChanged -= OnTextChangedHide;
             editBox.GotFocus    -= OnGotFocusHide;
+            RootGrid.PointerPressed -= OnRootOutsideClick;
+            _activeEditCommit = null;
+            _activeEditCancel = null;
             editBox.Visibility = Visibility.Collapsed;
             displayView.Opacity = 1;
             capBorder.BorderBrush = origBrush;
@@ -852,13 +886,23 @@ public sealed partial class MainWindow : Window
 
         void Cancel() { if (done) return; done = true; EndEdit(); }
 
+        _activeEditCommit = Commit;
+        _activeEditCancel = Cancel;
+
         void OnKeyDown(object s, KeyRoutedEventArgs e)
         {
             if (e.Key == Windows.System.VirtualKey.Enter) { Commit(); e.Handled = true; }
             else if (e.Key == Windows.System.VirtualKey.Escape) { Cancel(); e.Handled = true; }
         }
 
-        void OnLostFocus(object s, RoutedEventArgs e) => Commit();
+        void OnLostFocus(object s, RoutedEventArgs e)
+        {
+            if (done) return;
+            // 用户外击导致失焦时鼠标键通常仍处于按下状态：右键 → 取消，其他（含左键、Tab）→ 提交
+            bool rightDown = (User32.GetAsyncKeyState(VK.RBUTTON) & 0x8000) != 0;
+            if (rightDown) Cancel();
+            else Commit();
+        }
 
         editBox.KeyDown += OnKeyDown;
         editBox.LostFocus += OnLostFocus;
@@ -892,6 +936,17 @@ public sealed partial class MainWindow : Window
     // ── 实时拖拽：CapturePointer + GetCursorPos + AppWindow.Move ─────
     private void OnDragAreaPressed(object sender, PointerRoutedEventArgs e)
     {
+        var props = e.GetCurrentPoint(null).Properties;
+        // 编辑态：拖拽区点击也作为「确认/取消」，禁用拖拽
+        if (_activeEditCommit != null)
+        {
+            if (props.IsRightButtonPressed) _activeEditCancel?.Invoke();
+            else _activeEditCommit?.Invoke();
+            e.Handled = true;
+            return;
+        }
+        // 右键不参与拖拽
+        if (props.IsRightButtonPressed) return;
         if (sender is not UIElement el) return;
         if (!el.CapturePointer(e.Pointer)) return;
         User32.GetCursorPos(out _dragStartCursor);

@@ -24,6 +24,8 @@ internal static class VK
     public const int KEY_C   = 0x43;
     public const int KEY_V   = 0x56;
 
+    public const int LBUTTON = 0x01;
+    public const int RBUTTON = 0x02;
     public const int VK_1 = 0x31;
     public const int VK_2 = 0x32;
     public const int VK_3 = 0x33;

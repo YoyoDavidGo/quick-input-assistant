@@ -105,36 +105,15 @@ internal sealed class CoreService : IDisposable
     }
 
     /// <summary>
-    /// Alt+Q 快速路径：Win32 Edit 控件且无选区时直接走日期状态机，跳过 80ms 剪贴板探测。
+    /// Alt+Q 快速路径：已知控件类（Edit / Scintilla）且无选区时直接走日期状态机，跳过 80ms 剪贴板探测。
     /// </summary>
     private bool TryDirectDateOutput()
     {
-        try
-        {
-            IntPtr fg = User32.GetForegroundWindow();
-            if (fg == IntPtr.Zero) return false;
-            uint tid = User32.GetWindowThreadProcessId(fg, out _);
-            var gti = new GUITHREADINFO { cbSize = Marshal.SizeOf<GUITHREADINFO>() };
-            if (!User32.GetGUIThreadInfo(tid, ref gti) || gti.hwndFocus == IntPtr.Zero)
-                return false;
-            var cls = new StringBuilder(64);
-            if (User32.GetClassName(gti.hwndFocus, cls, 64) == 0) return false;
-            if (!cls.ToString().Equals("Edit", StringComparison.OrdinalIgnoreCase)) return false;
-
-            IntPtr sel = User32.SendMessage(gti.hwndFocus, 0x00B0, IntPtr.Zero, IntPtr.Zero);
-            uint raw = (uint)(sel.ToInt64() & 0xFFFF_FFFF);
-            int selStart = (int)(raw & 0xFFFF);
-            int selEnd   = (int)(raw >> 16);
-            if (selStart != selEnd) return false; // 有选区 → 走绑定路径
-
-            InvokeDateHandle();
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex, "TryDirectDateOutput 异常");
-            return false;
-        }
+        bool? hasSel = ProbeKnownSelection();
+        if (hasSel == null) return false;          // 未知控件类 → 走通用路径
+        if (hasSel.Value)   return false;          // 有选区 → 走绑定路径
+        InvokeDateHandle();
+        return true;
     }
 
     private void HandleStandardKey(char key)
@@ -155,6 +134,14 @@ internal sealed class CoreService : IDisposable
             // 80ms 超时（较旧的 150ms），Ctrl+C 在现代系统上 <50ms 即可完成
             string? newText = await _clipboard.PollForChangeAsync(snap, timeoutMs: 80, intervalMs: 10);
             _clipboard.Restore(snap);
+
+            // Notepad++/VSCode 等编辑器在无选区时 Ctrl+C 会复制当前行（含换行），
+            // 剪贴板"变化"但 trim 后为空白 → 视为无选区，避免把空白当成绑定值覆盖
+            if (newText is not null && string.IsNullOrWhiteSpace(newText))
+            {
+                _log.LogInformation("ALT+{Key} 剪贴板变化但内容为空白，按无选区处理", key);
+                newText = null;
+            }
 
             if (newText is not null)
             {
@@ -185,54 +172,74 @@ internal sealed class CoreService : IDisposable
     }
 
     /// <summary>
-    /// 快速路径：若前台焦点控件是 Win32 Edit 且无文本选区，直接输出绑定内容，
-    /// 完全跳过 Ctrl+C + 剪贴板轮询，消除 80ms 等待。
-    /// 返回 true 表示已处理（调用方无需再走通用路径）。
+    /// 快速路径：若前台焦点控件类已知（Edit / Scintilla），直接读取选区状态：
+    ///   有选区 → 走绑定路径；无选区 → 直接输出绑定。
+    /// 完全跳过 Ctrl+C + 剪贴板轮询，消除 80ms 等待，且避免 Notepad++ 等编辑器
+    /// 无选区 Ctrl+C 复制当前行导致的误绑定。
+    /// 返回 true 表示已处理。
     /// </summary>
     private bool TryDirectOutput(char key)
     {
+        bool? hasSel = ProbeKnownSelection();
+        if (hasSel == null) return false;     // 未知控件类 → 走通用路径
+        if (hasSel.Value)   return false;     // 有选区 → 走绑定路径
+
+        // 无选区 → 直接输出
+        string val = _store.Get(key);
+        if (!string.IsNullOrEmpty(val))
+        {
+            _log.LogInformation("ALT+{Key} 已知控件 快速输出", key);
+            _input.TypeString(val);
+            _status.Set(new StatusMessage { Tone = StatusTone.Info, Text = $"⚡ 已输出 ALT+{key} 内容" });
+        }
+        else
+        {
+            _status.Set(new StatusMessage { Tone = StatusTone.Info, Text = $"💡 ALT+{key} 尚未绑定" });
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 探测前台焦点控件的选区状态：
+    ///   null = 未知/不可探测控件类（如 Chromium、UWP），调用方应回退到剪贴板探测
+    ///   true = 有选区
+    ///   false = 无选区
+    /// </summary>
+    private bool? ProbeKnownSelection()
+    {
         try
         {
-            // 获取前台线程焦点控件
             IntPtr fg = User32.GetForegroundWindow();
-            if (fg == IntPtr.Zero) return false;
-
+            if (fg == IntPtr.Zero) return null;
             uint tid = User32.GetWindowThreadProcessId(fg, out _);
             var gti = new GUITHREADINFO { cbSize = Marshal.SizeOf<GUITHREADINFO>() };
             if (!User32.GetGUIThreadInfo(tid, ref gti) || gti.hwndFocus == IntPtr.Zero)
-                return false;
+                return null;
 
-            // 只对 Win32 "Edit" 类控件做快速判断
             var cls = new StringBuilder(64);
-            if (User32.GetClassName(gti.hwndFocus, cls, 64) == 0) return false;
-            if (!cls.ToString().Equals("Edit", StringComparison.OrdinalIgnoreCase)) return false;
+            if (User32.GetClassName(gti.hwndFocus, cls, 64) == 0) return null;
+            string className = cls.ToString();
 
-            // EM_GETSEL (0x00B0)：返回值低 16 位 = selStart，高 16 位 = selEnd
-            IntPtr sel = User32.SendMessage(gti.hwndFocus, 0x00B0, IntPtr.Zero, IntPtr.Zero);
-            uint raw = (uint)(sel.ToInt64() & 0xFFFF_FFFF);
-            int selStart = (int)(raw & 0xFFFF);
-            int selEnd   = (int)(raw >> 16);
-
-            if (selStart != selEnd) return false; // 有选区 → 走绑定路径
-
-            // 无选区 → 直接输出
-            string val = _store.Get(key);
-            if (!string.IsNullOrEmpty(val))
+            if (className.Equals("Edit", StringComparison.OrdinalIgnoreCase))
             {
-                _log.LogInformation("ALT+{Key} Edit 快速输出", key);
-                _input.TypeString(val);
-                _status.Set(new StatusMessage { Tone = StatusTone.Info, Text = $"⚡ 已输出 ALT+{key} 内容" });
+                // EM_GETSEL = 0x00B0：低 16 = selStart，高 16 = selEnd
+                IntPtr sel = User32.SendMessage(gti.hwndFocus, 0x00B0, IntPtr.Zero, IntPtr.Zero);
+                uint raw = (uint)(sel.ToInt64() & 0xFFFF_FFFF);
+                return (raw & 0xFFFF) != (raw >> 16);
             }
-            else
+            // Scintilla（Notepad++、SciTE 等）：SCI_GETSELECTIONSTART/END
+            if (className.Contains("Scintilla", StringComparison.OrdinalIgnoreCase))
             {
-                _status.Set(new StatusMessage { Tone = StatusTone.Info, Text = $"💡 ALT+{key} 尚未绑定" });
+                IntPtr start = User32.SendMessage(gti.hwndFocus, 2143, IntPtr.Zero, IntPtr.Zero);
+                IntPtr end   = User32.SendMessage(gti.hwndFocus, 2144, IntPtr.Zero, IntPtr.Zero);
+                return start.ToInt64() != end.ToInt64();
             }
-            return true;
+            return null;  // 未知控件类 → 走通用剪贴板探测
         }
         catch (Exception ex)
         {
-            _log.LogWarning(ex, "TryDirectOutput 异常");
-            return false;
+            _log.LogWarning(ex, "ProbeKnownSelection 异常");
+            return null;
         }
     }
 

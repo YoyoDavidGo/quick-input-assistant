@@ -12,6 +12,8 @@
     <WindowsPackageType>None</WindowsPackageType>
     <SelfContained>false</SelfContained>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- 仅保留必需的卫星语言资源，剔除 80+ 多余语言 -->
+    <SatelliteResourceLanguages>zh-CN;en-US</SatelliteResourceLanguages>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

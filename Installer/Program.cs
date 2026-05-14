@@ -2,133 +2,207 @@ using Microsoft.Win32;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
-using System.Runtime.InteropServices;
 
 const string AppName    = "QuickInputAssistant";
 const string AppDisplay = "QuickInputAssistant 快捷输入助手";
 const string AppVersion = "1.0.0";
 const string ExeName    = "QuickInputAssistant.exe";
+const string MutexName  = "Global\\QuickInputAssistant_Installer_v1";
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
+Console.Title = $"{AppDisplay} 安装向导 v{AppVersion}";
+
+// ── 全局单实例（防多窗口）─────────────────────────────────────
+using var mutex = new Mutex(true, MutexName, out bool isFirst);
+if (!isFirst)
+{
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.WriteLine();
+    Console.WriteLine("⚠️  安装程序已经在运行，请勿重复打开。");
+    Console.ResetColor();
+    Console.WriteLine();
+    Console.WriteLine("按任意键关闭此窗口...");
+    Console.ReadKey(true);
+    return;
+}
 
 // ── 管理员提权 ────────────────────────────────────────────────
 if (!IsAdmin())
 {
-    Console.WriteLine("需要管理员权限，正在提权...");
+    Console.WriteLine("需要管理员权限，请在弹出的 UAC 对话框中点'是'...");
+    mutex.ReleaseMutex();  // 提前释放，让子进程能拿到 Mutex
     var psi = new ProcessStartInfo(Environment.ProcessPath!, "")
     {
         Verb = "runas",
         UseShellExecute = true
     };
     try { Process.Start(psi); }
-    catch { Console.WriteLine("已取消。"); }
+    catch { Console.WriteLine("已取消。按任意键退出..."); Console.ReadKey(true); }
     return;
 }
 
-// ── 欢迎界面 ─────────────────────────────────────────────────
+// ── 横幅 ─────────────────────────────────────────────────────
 Console.Clear();
 Console.ForegroundColor = ConsoleColor.Cyan;
-Console.WriteLine("╔══════════════════════════════════════════╗");
-Console.WriteLine("║   QuickInputAssistant 快捷输入助手         ║");
-Console.WriteLine($"║   版本 {AppVersion}  安装向导                  ║");
-Console.WriteLine("╚══════════════════════════════════════════╝");
+Console.WriteLine();
+Console.WriteLine("  ╔══════════════════════════════════════════════╗");
+Console.WriteLine("  ║      QuickInputAssistant 快捷输入助手        ║");
+Console.WriteLine($"  ║      版本 {AppVersion}   安装向导                    ║");
+Console.WriteLine("  ╚══════════════════════════════════════════════╝");
 Console.ResetColor();
 Console.WriteLine();
 
-string installDir = Path.Combine(
+string defaultDir = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), AppName);
 
-Console.WriteLine($"安装目录: {installDir}");
-Console.Write("按 Enter 开始安装，或 Ctrl+C 取消...");
-Console.ReadLine();
+Console.WriteLine($"  默认安装目录：{defaultDir}");
+Console.Write("  回车使用默认，或输入其他路径（如 D:\\Apps\\QuickInputAssistant）：");
+string userInput = (Console.ReadLine() ?? "").Trim().Trim('"');
+
+string installDir;
+if (string.IsNullOrWhiteSpace(userInput))
+{
+    installDir = defaultDir;
+}
+else
+{
+    try
+    {
+        installDir = Path.GetFullPath(userInput);
+        // 校验路径可写
+        var parent = Path.GetDirectoryName(installDir);
+        if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
+            Directory.CreateDirectory(parent ?? installDir);
+    }
+    catch (Exception ex)
+    {
+        Fail($"路径无效：{ex.Message}");
+        return;
+    }
+}
+
+bool isUpgrade = Directory.Exists(installDir);
+Console.WriteLine();
+Console.WriteLine($"  目标目录：{installDir}");
+Console.WriteLine($"  操作类型：{(isUpgrade ? "覆盖升级（保留用户数据）" : "全新安装")}");
+Console.WriteLine();
+Console.WriteLine("  开始安装...");
+Console.WriteLine();
 
 // ── 停止旧进程 ───────────────────────────────────────────────
+Step("停止运行中的实例");
 StopProcess(ExeName.Replace(".exe", ""));
+Thread.Sleep(500);
 
 // ── 解压到安装目录 ────────────────────────────────────────────
-Console.WriteLine();
-Step("解压文件...");
+Step("解压文件");
 if (Directory.Exists(installDir))
-    Directory.Delete(installDir, true);
+{
+    try { Directory.Delete(installDir, true); }
+    catch (Exception ex)
+    {
+        Fail($"无法清理旧目录：{ex.Message}\n   请确认应用已关闭后重试。");
+        return;
+    }
+}
 Directory.CreateDirectory(installDir);
 
-using var stream = Assembly.GetExecutingAssembly()
-    .GetManifestResourceStream("Installer.Resources.app.zip")
-    ?? throw new Exception("嵌入资源 app.zip 未找到");
-
-using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
-int total = zip.Entries.Count, done = 0;
-foreach (var entry in zip.Entries)
+using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Installer.Resources.app.zip"))
 {
-    if (string.IsNullOrEmpty(entry.Name)) continue; // 目录项
-    string destPath = Path.Combine(installDir, entry.FullName.Replace('/', '\\'));
-    Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-    entry.ExtractToFile(destPath, overwrite: true);
-    done++;
-    if (done % 30 == 0)
-        Console.Write($"\r  已解压 {done}/{total} 个文件...   ");
+    if (stream == null) { Fail("嵌入资源 app.zip 未找到"); return; }
+    using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
+    int total = zip.Entries.Count, done = 0;
+    foreach (var entry in zip.Entries)
+    {
+        if (string.IsNullOrEmpty(entry.Name)) continue;
+        string destPath = Path.Combine(installDir, entry.FullName.Replace('/', '\\'));
+        Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+        entry.ExtractToFile(destPath, overwrite: true);
+        done++;
+        if (done % 50 == 0)
+            Console.Write($"\r       已解压 {done}/{total} ...   ");
+    }
+    Console.WriteLine($"\r       已解压 {total}/{total} 完成     ");
 }
-Console.WriteLine($"\r  已解压 {done}/{total} 个文件    ");
 
-// 把 uninstall.ps1 也写进安装目录
-Step("写入卸载脚本...");
+// ── 写卸载脚本 ───────────────────────────────────────────────
+Step("写入卸载脚本");
 File.WriteAllText(Path.Combine(installDir, "uninstall.ps1"), UninstallScript(installDir));
 
-// ── 桌面快捷方式 ──────────────────────────────────────────────
-Step("创建桌面快捷方式...");
+// ── 桌面快捷方式 + 开始菜单 ─────────────────────────────────────
+Step("创建桌面快捷方式");
 CreateShortcut(
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory), $"{AppName}.lnk"),
     Path.Combine(installDir, ExeName), installDir);
 
-// ── 开始菜单 ─────────────────────────────────────────────────
-Step("创建开始菜单...");
+Step("创建开始菜单项");
 CreateShortcut(
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), $"{AppName}.lnk"),
     Path.Combine(installDir, ExeName), installDir);
 
 // ── 开机自启（HKCU）────────────────────────────────────────────
-Step("设置开机自启...");
-using var runKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)!;
-runKey.SetValue(AppName, $"\"{Path.Combine(installDir, ExeName)}\"");
+Step("配置开机自启");
+using (var runKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)!)
+    runKey.SetValue(AppName, $"\"{Path.Combine(installDir, ExeName)}\"");
 
 // ── 控制面板卸载项 ────────────────────────────────────────────
-Step("注册卸载信息...");
-using var uninstKey = Registry.LocalMachine.CreateSubKey(
-    $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{AppName}");
-uninstKey.SetValue("DisplayName",     AppDisplay);
-uninstKey.SetValue("DisplayVersion",  AppVersion);
-uninstKey.SetValue("Publisher",       "QuickInputAssistant");
-uninstKey.SetValue("InstallLocation", installDir);
-uninstKey.SetValue("UninstallString",
-    $"powershell -ExecutionPolicy Bypass -File \"{Path.Combine(installDir, "uninstall.ps1")}\"");
-uninstKey.SetValue("NoModify", 1, RegistryValueKind.DWord);
-uninstKey.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+Step("注册卸载项");
+using (var uninstKey = Registry.LocalMachine.CreateSubKey(
+    $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{AppName}"))
+{
+    uninstKey.SetValue("DisplayName",     AppDisplay);
+    uninstKey.SetValue("DisplayVersion",  AppVersion);
+    uninstKey.SetValue("Publisher",       "QuickInputAssistant");
+    uninstKey.SetValue("InstallLocation", installDir);
+    uninstKey.SetValue("UninstallString",
+        $"powershell -ExecutionPolicy Bypass -File \"{Path.Combine(installDir, "uninstall.ps1")}\"");
+    uninstKey.SetValue("NoModify", 1, RegistryValueKind.DWord);
+    uninstKey.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+}
 
 // ── 完成 ─────────────────────────────────────────────────────
+Console.WriteLine();
 Console.ForegroundColor = ConsoleColor.Green;
-Console.WriteLine();
-Console.WriteLine("✅ 安装完成！");
+Console.WriteLine("  ╔══════════════════════════════════════════════╗");
+Console.WriteLine("  ║              ✅  安装成功  ✅                ║");
+Console.WriteLine("  ╚══════════════════════════════════════════════╝");
 Console.ResetColor();
-Console.WriteLine($"   程序: {Path.Combine(installDir, ExeName)}");
-Console.WriteLine("   桌面快捷方式已创建");
-Console.WriteLine("   已加入开机自启（可在设置中关闭）");
 Console.WriteLine();
-Console.Write("是否立即启动程序？[Y/N] ");
-var ans = Console.ReadLine();
-if (ans?.Trim().ToUpper() == "Y")
+Console.WriteLine($"  • 程序位置：{Path.Combine(installDir, ExeName)}");
+Console.WriteLine("  • 桌面已创建快捷方式");
+Console.WriteLine("  • 开始菜单已加入");
+Console.WriteLine("  • 开机自启已配置");
+Console.WriteLine();
+Console.Write("  是否立即启动程序？[Y/n] ");
+var ans = (Console.ReadLine() ?? "").Trim().ToUpper();
+if (ans == "" || ans == "Y")
+{
     Process.Start(new ProcessStartInfo(Path.Combine(installDir, ExeName)) { UseShellExecute = true });
-
-Console.WriteLine("按任意键退出...");
-Console.ReadKey();
+    Console.WriteLine("  程序已启动。");
+}
+Console.WriteLine();
+Console.WriteLine("  按任意键关闭安装程序...");
+Console.ReadKey(true);
 
 // ── 辅助函数 ─────────────────────────────────────────────────
 
 static void Step(string msg)
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write(">>> ");
+    Console.Write("  >>> ");
     Console.ResetColor();
     Console.WriteLine(msg);
+}
+
+static void Fail(string msg)
+{
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine();
+    Console.WriteLine("  ❌ 安装失败：" + msg);
+    Console.ResetColor();
+    Console.WriteLine();
+    Console.WriteLine("  按任意键关闭...");
+    Console.ReadKey(true);
 }
 
 static bool IsAdmin()
@@ -148,7 +222,6 @@ static void StopProcess(string name)
 
 static void CreateShortcut(string lnkPath, string targetPath, string workDir)
 {
-    // 用 WScript.Shell COM 创建快捷方式
     Type? shellType = Type.GetTypeFromProgID("WScript.Shell");
     if (shellType is null) return;
     dynamic shell = Activator.CreateInstance(shellType)!;
