@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using QuickInputAssistant.Models;
 using QuickInputAssistant.PInvoke;
+using System.IO;
 using System.Runtime.InteropServices;
 using Windows.Graphics;
 using Windows.UI;
@@ -112,6 +113,7 @@ public sealed partial class MainWindow : Window
         Color HoverBg, Color Surface1, Color Surface2, Color Divider,
         Color FlyoutBg, Color FlyoutBorder);
 
+    // 深色 = 原始视觉（用户截图 1 的状态）；浅色用对称强度（白对应黑、深背景对应浅背景）
     private static readonly ThemeColors DarkColors = new(
         CapBg:        Color.FromArgb(0xE0, 0x2C, 0x2C, 0x32),
         CapHover:     Color.FromArgb(0xF0, 0x40, 0x40, 0x48),
@@ -131,22 +133,22 @@ public sealed partial class MainWindow : Window
         FlyoutBorder: Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
 
     private static readonly ThemeColors LightColors = new(
-        CapBg:        Color.FromArgb(0xF0, 0xF4, 0xF4, 0xF7),
-        CapHover:     Color.FromArgb(0xFF, 0xE0, 0xE0, 0xE4),
-        CapBorder:    Color.FromArgb(0x33, 0x00, 0x00, 0x00),
+        CapBg:        Color.FromArgb(0xE0, 0xE8, 0xE8, 0xEC),
+        CapHover:     Color.FromArgb(0xF0, 0xD8, 0xD8, 0xDC),
+        CapBorder:    Color.FromArgb(0x1A, 0x00, 0x00, 0x00),
         Fg:           Color.FromArgb(0xF5, 0x00, 0x00, 0x00),
-        FgMute:       Color.FromArgb(0x99, 0x00, 0x00, 0x00),
+        FgMute:       Color.FromArgb(0x8C, 0x00, 0x00, 0x00),
         Accent:       Color.FromArgb(0xFF, 0x00, 0x67, 0xC0),
         Success:      Color.FromArgb(0xFF, 0x0E, 0x70, 0x32),
         Info:         Color.FromArgb(0xFF, 0x00, 0x5A, 0x9E),
         Warn:         Color.FromArgb(0xFF, 0x9D, 0x5D, 0x00),
-        Idle:         Color.FromArgb(0x99, 0x00, 0x00, 0x00),
+        Idle:         Color.FromArgb(0x8C, 0x00, 0x00, 0x00),
         HoverBg:      Color.FromArgb(0x1A, 0x00, 0x00, 0x00),
-        Surface1:     Color.FromArgb(0xF2, 0xF4, 0xF4, 0xF7),
-        Surface2:     Color.FromArgb(0xE0, 0xEC, 0xEC, 0xF0),
-        Divider:      Color.FromArgb(0x18, 0x00, 0x00, 0x00),
-        FlyoutBg:     Color.FromArgb(0xF6, 0xFA, 0xFA, 0xFC),
-        FlyoutBorder: Color.FromArgb(0x33, 0x00, 0x00, 0x00));
+        Surface1:     Color.FromArgb(0xF0, 0xEC, 0xEC, 0xF0),
+        Surface2:     Color.FromArgb(0xD0, 0xEE, 0xEE, 0xF2),
+        Divider:      Color.FromArgb(0x0F, 0x00, 0x00, 0x00),
+        FlyoutBg:     Color.FromArgb(0xF2, 0xEC, 0xEC, 0xEE),
+        FlyoutBorder: Color.FromArgb(0x40, 0x00, 0x00, 0x00));
 
     static MainWindow() { ApplyThemeColors(AppTheme.Dark); }
 
@@ -185,14 +187,18 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+
+        // 先确定主题：从存储加载、应用颜色、设置 RootGrid.RequestedTheme，
+        // 这样后续 SystemBackdrop 创建时能取到正确的主题 tint（修复首次启动浅色色调错误）
+        _themeMode = Enum.TryParse<ThemeMode>(App.StoreSvc.Theme, ignoreCase: true, out var m) ? m : ThemeMode.Dark;
+        _currentTheme = ResolveTheme(_themeMode);
+        ApplyThemeColors(_currentTheme);
+        RootGrid.RequestedTheme = _currentTheme == AppTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+
         // 真透明背景：WinUIEx 的 TransparentTintBackdrop 让窗口背景真正透明，
         // XAML 圆角 Border 由 WinUI3 用 DirectX 抗锯齿渲染，无白边无锯齿
         try { this.SystemBackdrop = new WinUIEx.TransparentTintBackdrop(); }
         catch (Exception ex) { _log.LogWarning(ex, "TransparentTintBackdrop 设置失败"); }
-        // 从存储加载主题模式（默认 Dark）
-        _themeMode = Enum.TryParse<ThemeMode>(App.StoreSvc.Theme, ignoreCase: true, out var m) ? m : ThemeMode.Dark;
-        _currentTheme = ResolveTheme(_themeMode);
-        ApplyThemeColors(_currentTheme);
 
         ConfigureWindow();
         ApplyThemeToShell();
@@ -212,6 +218,8 @@ public sealed partial class MainWindow : Window
         KBRow3Border.Background   = BrSurface2;
         ListContent.Background    = BrSurface1;
         ListDivider.Background    = BrDivider;
+        StatusDot.Fill            = BrIdle;
+        StatusText.Foreground     = BrIdle;
     }
 
     private void OnActiveSlotChanged(int slot)
@@ -236,6 +244,12 @@ public sealed partial class MainWindow : Window
 
         AppWindow.IsShownInSwitchers = false;
         AppWindow.Title = "快捷输入助手";
+        try
+        {
+            string icoPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
+            if (File.Exists(icoPath)) AppWindow.SetIcon(icoPath);
+        }
+        catch (Exception ex) { _log.LogWarning(ex, "设置窗口图标失败"); }
 
         try
         {
@@ -720,6 +734,20 @@ public sealed partial class MainWindow : Window
 
         flyout.Items.Add(new MenuFlyoutSeparator());
 
+        bool autoStart = Services.AutoStartService.IsEnabled();
+        var autoItem = MakeMenuItem((autoStart ? "● " : "    ") + "开机自启动");
+        autoItem.Click += (_, _) =>
+        {
+            bool now = !Services.AutoStartService.IsEnabled();
+            Services.AutoStartService.SetEnabled(now);
+            App.StatusSvc?.Set(new StatusMessage
+            {
+                Tone = StatusTone.Info,
+                Text = now ? "已开启开机自启动" : "已关闭开机自启动",
+            });
+        };
+        flyout.Items.Add(autoItem);
+
         var exit = MakeMenuItem("退出应用");
         exit.Click += OnExitClicked;
         flyout.Items.Add(exit);
@@ -775,6 +803,82 @@ public sealed partial class MainWindow : Window
         var rename = MakeMenuItem("重命名当前预设…");
         rename.Click += OnRenameCurrentClicked;
         parent.Items.Add(rename);
+        var reset = MakeMenuItem("重置当前为默认绑定…");
+        reset.Click += OnResetCurrentClicked;
+        parent.Items.Add(reset);
+    }
+
+    private void OnResetCurrentClicked(object sender, RoutedEventArgs e)
+    {
+        int active = App.StoreSvc.ActiveSlot;
+        string name = App.StoreSvc.GetSlotName(active);
+
+        Button MakeDlgBtn(string text, bool primary)
+        {
+            var btn = new Button
+            {
+                Content = text,
+                FontSize = 11,
+                MinWidth = 60,
+                Padding = new Thickness(10, 4, 10, 4),
+                CornerRadius = new CornerRadius(4),
+                BorderThickness = new Thickness(1),
+            };
+            if (primary)
+            {
+                btn.Background = BrWarn; btn.BorderBrush = BrWarn; btn.Foreground = BrSurface1;
+                btn.Resources["ButtonBackground"]             = BrWarn;
+                btn.Resources["ButtonBackgroundPointerOver"]  = BrWarn;
+                btn.Resources["ButtonBackgroundPressed"]      = BrWarn;
+                btn.Resources["ButtonForeground"]             = BrSurface1;
+                btn.Resources["ButtonForegroundPointerOver"]  = BrSurface1;
+                btn.Resources["ButtonForegroundPressed"]      = BrSurface1;
+                btn.Resources["ButtonBorderBrush"]            = BrWarn;
+                btn.Resources["ButtonBorderBrushPointerOver"] = BrWarn;
+                btn.Resources["ButtonBorderBrushPressed"]     = BrWarn;
+            }
+            else
+            {
+                btn.Background = BrTransp; btn.BorderBrush = BrCapBorder; btn.Foreground = BrFg;
+                btn.Resources["ButtonBackground"]             = BrTransp;
+                btn.Resources["ButtonBackgroundPointerOver"]  = BrHoverBg;
+                btn.Resources["ButtonBackgroundPressed"]      = BrCapHover;
+                btn.Resources["ButtonForeground"]             = BrFg;
+                btn.Resources["ButtonForegroundPointerOver"]  = BrFg;
+                btn.Resources["ButtonForegroundPressed"]      = BrFg;
+                btn.Resources["ButtonBorderBrush"]            = BrCapBorder;
+                btn.Resources["ButtonBorderBrushPointerOver"] = BrCapBorder;
+                btn.Resources["ButtonBorderBrushPressed"]     = BrCapBorder;
+            }
+            return btn;
+        }
+
+        var okBtn     = MakeDlgBtn("重置", primary: true);
+        var cancelBtn = MakeDlgBtn("取消", primary: false);
+        cancelBtn.Margin = new Thickness(6, 0, 0, 0);
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        btnRow.Children.Add(okBtn);
+        btnRow.Children.Add(cancelBtn);
+        var panel = new StackPanel { Spacing = 8, MinWidth = 240 };
+        panel.Children.Add(new TextBlock { Text = "重置当前预设？", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = BrFg });
+        panel.Children.Add(new TextBlock { Text = $"将把预设「{name}」的全部 14 个键位绑定恢复为出厂默认值，此操作不可撤销。",
+            FontSize = 11, Foreground = BrFgMute, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(btnRow);
+
+        var flyout = new Flyout
+        {
+            Content = panel,
+            FlyoutPresenterStyle = MakeDarkFlyoutStyle(),
+            ShouldConstrainToRootBounds = false,
+        };
+        okBtn.Click += (_, _) =>
+        {
+            App.StoreSvc.ResetSlotToDefaults(active);
+            flyout.Hide();
+            App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Success, Text = $"已重置「{name}」为默认绑定" });
+        };
+        cancelBtn.Click += (_, _) => flyout.Hide();
+        flyout.ShowAt(StatusBar);
     }
 
     private static MenuFlyoutItem MakeMenuItem(string text) => new()
@@ -789,17 +893,22 @@ public sealed partial class MainWindow : Window
     {
         string text =
             "【输出绑定文字】\n" +
-            "• 按 Alt+1~6 / Q-R / A-F 任一组合键，输出绑定的文字到当前焦点窗口\n" +
-            "• 或直接单击 UI 上的按键\n\n" +
+            "• 按 Alt+1~6 / Q-R / A-F 任一组合键，输出绑定文字到当前焦点窗口\n" +
+            "• 或左键单击 UI 上的按键\n\n" +
             "【日期键 Alt+Q】\n" +
             "• 单击：输出今日日期 (YY/MM/DD)\n" +
             "• 双击：撤销前一次并改为 +1 天\n\n" +
-            "【修改绑定】\n" +
-            "• 鼠标右击 UI 上的按键 → 直接在键帽内编辑文字 → 回车保存\n" +
+            "【修改绑定（内联编辑）】\n" +
+            "• 右键单击 UI 上的按键 → 进入编辑态（键帽变蓝边、文字全选）\n" +
+            "• 确认：回车 / 左键单击任意位置（键帽、状态栏、空白、桌面）\n" +
+            "• 取消：Esc / 右键单击任意位置（键帽、空白、桌面）\n" +
             "• 或在外部应用先选中文字 → 按 Alt+键 自动绑定\n\n" +
             "【预设】\n" +
-            "• 4 套独立绑定，可命名、可切换\n" +
-            "• 齿轮菜单 → 预设管理";
+            "• 齿轮菜单 → 预设管理：4 套独立绑定，可命名 / 切换\n" +
+            "• 状态栏齿轮左侧显示当前预设名\n\n" +
+            "【主题】\n" +
+            "• 齿轮菜单 → 切换主题：深色 / 浅色 / 跟随系统\n" +
+            "• 「跟随系统」与系统主题反向，便于在反差背景下查看";
         var tb = new TextBlock
         {
             Text = text,
@@ -833,14 +942,76 @@ public sealed partial class MainWindow : Window
             Width = 200,
             FontSize = 11,
             PlaceholderText = $"预设{active + 1}",
+            Background = BrCapBg,
+            BorderBrush = BrCapBorder,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8, 4, 8, 4),
+            Foreground = BrFg,
         };
-        var okBtn     = new Button { Content = "确定", FontSize = 11, MinWidth = 56, Padding = new Thickness(8, 3, 8, 3) };
-        var cancelBtn = new Button { Content = "取消", FontSize = 11, MinWidth = 56, Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(6, 0, 0, 0) };
+        // 主题 brush 覆盖所有 visual state（背景/边框/前景），避免焦点态变成默认蓝白
+        tb.Resources["TextControlBackground"]            = BrCapBg;
+        tb.Resources["TextControlBackgroundPointerOver"] = BrCapBg;
+        tb.Resources["TextControlBackgroundFocused"]     = BrCapBg;
+        tb.Resources["TextControlBorderBrush"]            = BrCapBorder;
+        tb.Resources["TextControlBorderBrushPointerOver"] = BrCapBorder;
+        tb.Resources["TextControlBorderBrushFocused"]     = BrAccent;
+        tb.Resources["TextControlForeground"]             = BrFg;
+        tb.Resources["TextControlForegroundPointerOver"]  = BrFg;
+        tb.Resources["TextControlForegroundFocused"]      = BrFg;
+
+        Button MakeDlgBtn(string text, bool primary)
+        {
+            var btn = new Button
+            {
+                Content = text,
+                FontSize = 11,
+                MinWidth = 60,
+                Padding = new Thickness(10, 4, 10, 4),
+                CornerRadius = new CornerRadius(4),
+                BorderThickness = new Thickness(1),
+            };
+            if (primary)
+            {
+                btn.Background = BrAccent;
+                btn.BorderBrush = BrAccent;
+                btn.Foreground = BrSurface1; // 与 accent 对比
+                btn.Resources["ButtonBackground"]              = BrAccent;
+                btn.Resources["ButtonBackgroundPointerOver"]   = BrAccent;
+                btn.Resources["ButtonBackgroundPressed"]       = BrAccent;
+                btn.Resources["ButtonForeground"]              = BrSurface1;
+                btn.Resources["ButtonForegroundPointerOver"]   = BrSurface1;
+                btn.Resources["ButtonForegroundPressed"]       = BrSurface1;
+                btn.Resources["ButtonBorderBrush"]             = BrAccent;
+                btn.Resources["ButtonBorderBrushPointerOver"]  = BrAccent;
+                btn.Resources["ButtonBorderBrushPressed"]      = BrAccent;
+            }
+            else
+            {
+                btn.Background  = BrTransp;
+                btn.BorderBrush = BrCapBorder;
+                btn.Foreground  = BrFg;
+                btn.Resources["ButtonBackground"]              = BrTransp;
+                btn.Resources["ButtonBackgroundPointerOver"]   = BrHoverBg;
+                btn.Resources["ButtonBackgroundPressed"]       = BrCapHover;
+                btn.Resources["ButtonForeground"]              = BrFg;
+                btn.Resources["ButtonForegroundPointerOver"]   = BrFg;
+                btn.Resources["ButtonForegroundPressed"]       = BrFg;
+                btn.Resources["ButtonBorderBrush"]             = BrCapBorder;
+                btn.Resources["ButtonBorderBrushPointerOver"]  = BrCapBorder;
+                btn.Resources["ButtonBorderBrushPressed"]      = BrCapBorder;
+            }
+            return btn;
+        }
+
+        var okBtn     = MakeDlgBtn("确定", primary: true);
+        var cancelBtn = MakeDlgBtn("取消", primary: false);
+        cancelBtn.Margin = new Thickness(6, 0, 0, 0);
         var btnRow    = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         btnRow.Children.Add(okBtn);
         btnRow.Children.Add(cancelBtn);
-        var panel = new StackPanel { Spacing = 6, MinWidth = 220 };
-        panel.Children.Add(new TextBlock { Text = "重命名预设", FontSize = 11, FontWeight = FontWeights.SemiBold });
+        var panel = new StackPanel { Spacing = 8, MinWidth = 220 };
+        panel.Children.Add(new TextBlock { Text = "重命名预设", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = BrFg });
         panel.Children.Add(tb);
         panel.Children.Add(btnRow);
 
@@ -872,9 +1043,12 @@ public sealed partial class MainWindow : Window
         flyout.ShowAt(StatusBar);
         tb.Loaded += (_, _) =>
         {
+            HideTextBoxDeleteButton(tb);
             tb.Focus(FocusState.Programmatic);
             tb.SelectAll();
         };
+        tb.TextChanged += (_, _) => HideTextBoxDeleteButton(tb);
+        tb.GotFocus    += (_, _) => HideTextBoxDeleteButton(tb);
     }
 
     private Border MakeActionBtn(string icon, PointerEventHandler handler)

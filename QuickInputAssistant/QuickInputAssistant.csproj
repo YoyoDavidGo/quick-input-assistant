@@ -18,6 +18,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <!-- 自含模式：禁用 Bootstrap/DeploymentManager 自动初始化 -->
     <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
@@ -45,6 +46,10 @@
     <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildProjectDirectory)\generate-pri.ps1&quot; -OutDir &quot;$(OutputPath).&quot; -MakePri &quot;$(_MakePriExe)&quot; -PriConfig &quot;$(MSBuildProjectDirectory)\priconfig.xml&quot; -IndexName &quot;$(MSBuildProjectName)&quot;"
           IgnoreExitCode="true" />
   </Target>
+
+  <ItemGroup>
+    <Content Include="Assets\app.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.240627000" />

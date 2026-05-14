@@ -151,20 +151,47 @@ public sealed class BindingStore : IDisposable
             _slots.Add(new PresetSlot { Name = "", Bindings = new() });
     }
 
+    private static readonly Dictionary<string, string> DefaultBindings = new()
+    {
+        ["1"] = "A700123",
+        ["2"] = "AHBM10",
+        ["3"] = "XX客户调试",
+        ["4"] = "替换",
+        ["5"] = "北京",
+        ["6"] = "汉庭",
+        ["W"] = "住所",
+        ["E"] = "宾馆",
+        ["R"] = "客户现场",
+        ["A"] = "打车",
+        ["S"] = "北京",
+        ["D"] = "滴滴合计",
+        ["F"] = "火车费",
+    };
+
     private void SetDefaultsForFirstInstall()
     {
-        // 仅预设 1 写入初始值
-        var b = _slots[0].Bindings;
-        b["1"] = "A700123";
-        b["2"] = "AHBM10";
-        b["3"] = "XX客户调试";
-        b["4"] = "火车/高铁费";
-        b["5"] = "高铁";
-        b["W"] = "住所";
-        b["E"] = "宾馆";
-        b["R"] = "客户现场";
+        _slots[0].Name = "报销";
+        _slots[0].Bindings = BuildDefaultBindings();
         SaveNow();
-        _log.LogInformation("首次安装：已写入 {N} 条默认绑定到预设 1", b.Count);
+        _log.LogInformation("首次安装：已写入 {N} 条默认绑定到预设 1（报销）", _slots[0].Bindings.Count);
+    }
+
+    /// <summary>把指定槽位绑定重置为出厂默认（名字保持不变）</summary>
+    public void ResetSlotToDefaults(int index)
+    {
+        if (index < 0 || index >= SlotCount) return;
+        _slots[index].Bindings = BuildDefaultBindings();
+        SaveNow();
+        if (index == _activeIndex) ActiveSlotChanged?.Invoke(index);
+    }
+
+    /// <summary>构造默认绑定字典；Alt+Q 动态填昨天日期（YY/MM/DD）</summary>
+    private static Dictionary<string, string> BuildDefaultBindings()
+    {
+        var d = new Dictionary<string, string>(DefaultBindings);
+        var y = DateTime.Today.AddDays(-1);
+        d["Q"] = $"{y.Year % 100:D2}/{y.Month:D2}/{y.Day:D2}";
+        return d;
     }
 
     private void SaveNow()

@@ -27,9 +27,9 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="6"
                                 Background="Transparent">
-                        <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#8CFFFFFF"
+                        <Ellipse x:Name="StatusDot" Width="8" Height="8"
                                  IsHitTestVisible="False"/>
-                        <TextBlock x:Name="StatusText" FontSize="11" Foreground="#8CFFFFFF"
+                        <TextBlock x:Name="StatusText" FontSize="11"
                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                    Text="快捷输入助手运行中…" IsHitTestVisible="False"/>
                     </StackPanel>
