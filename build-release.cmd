@@ -1,45 +1,47 @@
 @echo off
 setlocal enabledelayedexpansion
-chcp 65001 >nul
 
-REM 一键打包脚本：自含发布 + 多余语言精简 + 单文件安装器
-REM 双击运行时通过 pause 防止窗口闪退
+REM One-click packaging script for QuickInputAssistant.
 
-REM 强制切到脚本所在目录（双击时尤其重要）
 cd /d "%~dp0"
 set "ROOT=%CD%"
 
 echo ============================================================
-echo  快捷输入助手 - 打包脚本
-echo  工作目录: %ROOT%
+echo  QuickInputAssistant - Release Build
+echo  Working dir: %ROOT%
 echo ============================================================
 echo.
 
-REM 杀掉正在运行的实例（避免文件锁）
-taskkill /IM QuickInputAssistant.exe /F >nul 2>&1
+REM Kill any running instance to avoid file lock
+taskkill /IM QuickInputAssistant.exe /F 1>NUL 2>&1
 
-REM 1. 清空 publish/
+REM Shutdown stale MSBuild/dotnet daemons (may lock NuGet stub DLLs)
+dotnet build-server shutdown 1>NUL 2>&1
+
+REM Clean previous publish output
 if exist "%ROOT%\publish" rmdir /s /q "%ROOT%\publish"
 mkdir "%ROOT%\publish"
 
-REM 2. 发布主程序（自含）
-echo [1/4] dotnet publish 主程序（自含 .NET + WinAppSDK）...
+echo [1/4] dotnet publish main app (self-contained)...
 dotnet publish "%ROOT%\QuickInputAssistant\QuickInputAssistant.csproj" -c Release -p:Platform=x64 -r win-x64 --self-contained true -o "%ROOT%\publish"
 if errorlevel 1 (
     echo.
-    echo ###### 主程序 publish 失败 ######
+    echo ###### Main app publish FAILED ######
+    echo  Tip: restart your PC or run "dotnet build-server shutdown" and retry.
     pause
     exit /b 1
 )
 
-REM 3a. 复制 XAML 产物（XBF / resources.pri）
+REM Copy XAML artifacts (XBF + resources.pri) from bin to publish.
+REM dotnet publish does NOT include them automatically because GenerateResourcesPri
+REM only runs AfterTargets=Build and Publish has its own staging.
 set "BIN=%ROOT%\QuickInputAssistant\bin\x64\Release\net8.0-windows10.0.19041.0\win-x64"
-copy /Y "%BIN%\App.xbf"        "%ROOT%\publish\" >nul
-copy /Y "%BIN%\MainWindow.xbf" "%ROOT%\publish\" >nul
-copy /Y "%BIN%\resources.pri"  "%ROOT%\publish\" >nul
+echo Copying XAML artifacts from bin...
+copy /Y "%BIN%\App.xbf"        "%ROOT%\publish\"
+copy /Y "%BIN%\MainWindow.xbf" "%ROOT%\publish\"
+copy /Y "%BIN%\resources.pri"  "%ROOT%\publish\"
 
-REM 3b. 删除非 CN/EN 语言子目录
-echo [2/4] 精简多余语言资源...
+echo [2/4] Strip unused locale dirs...
 for /d %%D in ("%ROOT%\publish\*-*") do (
     set "NAME=%%~nxD"
     set "KEEP=0"
@@ -51,43 +53,40 @@ for /d %%D in ("%ROOT%\publish\*-*") do (
     if "!KEEP!"=="0" rmdir /s /q "%%D"
 )
 
-REM 4. 复制安装/卸载脚本
+REM Copy install / uninstall scripts
 if exist "%ROOT%\publish-scripts" (
     for %%F in (install.bat install.ps1 uninstall.bat uninstall.ps1) do (
-        if exist "%ROOT%\publish-scripts\%%F" copy /Y "%ROOT%\publish-scripts\%%F" "%ROOT%\publish\" >nul
+        if exist "%ROOT%\publish-scripts\%%F" copy /Y "%ROOT%\publish-scripts\%%F" "%ROOT%\publish\" 1>NUL
     )
 )
 
-REM 5. 打包为 app.zip
-echo [3/4] 压缩 app.zip...
+echo [3/4] Compress app.zip...
 powershell -NoProfile -Command "Compress-Archive -Path '%ROOT%\publish\*' -DestinationPath '%ROOT%\Installer\Resources\app.zip' -Force"
 if errorlevel 1 (
     echo.
-    echo ###### 压缩 app.zip 失败 ######
+    echo ###### Compress app.zip FAILED ######
     pause
     exit /b 1
 )
 
-REM 6. 编译单文件安装器
-echo [4/4] 生成单文件安装器...
+echo [4/4] Build single-file installer...
 dotnet publish "%ROOT%\Installer\Installer.csproj" -c Release -r win-x64 -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true -o "%ROOT%\dist"
 if errorlevel 1 (
     echo.
-    echo ###### Installer publish 失败 ######
+    echo ###### Installer publish FAILED ######
     pause
     exit /b 1
 )
 
-REM 输出大小与产物路径
 echo.
 echo ============================================================
 powershell -NoProfile -Command "$pub = [math]::Round((Get-ChildItem '%ROOT%\publish' -Recurse | Measure-Object Length -Sum).Sum/1MB,1); $zip=[math]::Round((Get-Item '%ROOT%\Installer\Resources\app.zip').Length/1MB,1); $exe=[math]::Round((Get-Item '%ROOT%\dist\QuickInputAssistant_Setup.exe').Length/1MB,1); Write-Host ('publish/   ' + $pub + ' MB'); Write-Host ('app.zip    ' + $zip + ' MB'); Write-Host ('installer  ' + $exe + ' MB')"
 echo ============================================================
 echo.
-echo  打包成功！安装器位于：
+echo  Build success! Installer at:
 echo    %ROOT%\dist\QuickInputAssistant_Setup.exe
 echo.
-echo  双击即可安装。
+echo  Double click to install.
 echo ============================================================
 echo.
 pause

@@ -1019,8 +1019,12 @@ public sealed partial class MainWindow : Window
         {
             Content = panel,
             FlyoutPresenterStyle = MakeDarkFlyoutStyle(),
-            ShouldConstrainToRootBounds = false,
+            // 关键：保持在主窗口 HWND 内，否则子 popup 没有 IME 上下文，中文输入法连不上
+            ShouldConstrainToRootBounds = true,
         };
+        // 临时清空窗口区域裁切，让 flyout 内容能完整渲染；关闭后由 UpdateWindowRegion 恢复
+        flyout.Opening += (_, _) => { try { User32.SetWindowRgn(_hwnd, IntPtr.Zero, true); } catch { } };
+        flyout.Closed  += (_, _) => UpdateWindowRegion();
         void DoOk()
         {
             App.StoreSvc.RenameSlot(active, tb.Text);
