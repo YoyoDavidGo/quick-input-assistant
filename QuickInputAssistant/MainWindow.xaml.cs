@@ -59,18 +59,127 @@ public sealed partial class MainWindow : Window
     private static readonly char[] ListLeft  = { '1', '2', '3', '4', '5', '6' };
     private static readonly char[] ListRight = { 'Q', 'W', 'E', 'R', 'A', 'S', 'D', 'F' };
 
-    private static readonly SolidColorBrush BrCapBg     = new(Color.FromArgb(0xE0, 0x2C, 0x2C, 0x32));
-    private static readonly SolidColorBrush BrCapHover  = new(Color.FromArgb(0xF0, 0x40, 0x40, 0x48));
-    private static readonly SolidColorBrush BrCapBorder = new(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
-    private static readonly SolidColorBrush BrFg        = new(Color.FromArgb(0xF5, 0xFF, 0xFF, 0xFF));
-    private static readonly SolidColorBrush BrFgMute    = new(Color.FromArgb(0x8C, 0xFF, 0xFF, 0xFF));
-    private static readonly SolidColorBrush BrAccent    = new(Color.FromArgb(0xFF, 0x4C, 0xC2, 0xFF));
-    private static readonly SolidColorBrush BrSuccess   = new(Color.FromArgb(0xFF, 0x5D, 0xD2, 0x8B));
-    private static readonly SolidColorBrush BrInfo      = new(Color.FromArgb(0xFF, 0x79, 0xC5, 0xFF));
-    private static readonly SolidColorBrush BrWarn      = new(Color.FromArgb(0xFF, 0xFF, 0xC4, 0x6A));
-    private static readonly SolidColorBrush BrIdle      = new(Color.FromArgb(0x8C, 0xFF, 0xFF, 0xFF));
+    // 主题相关 brush：颜色由 ApplyThemeColors() 在运行时填充
+    private static readonly SolidColorBrush BrCapBg     = new();
+    private static readonly SolidColorBrush BrCapHover  = new();
+    private static readonly SolidColorBrush BrCapBorder = new();
+    private static readonly SolidColorBrush BrFg        = new();
+    private static readonly SolidColorBrush BrFgMute    = new();
+    private static readonly SolidColorBrush BrAccent    = new();
+    private static readonly SolidColorBrush BrSuccess   = new();
+    private static readonly SolidColorBrush BrInfo      = new();
+    private static readonly SolidColorBrush BrWarn      = new();
+    private static readonly SolidColorBrush BrIdle      = new();
+    private static readonly SolidColorBrush BrHoverBg   = new();
+    private static readonly SolidColorBrush BrSurface1  = new(); // 状态栏 / 列表面板背景
+    private static readonly SolidColorBrush BrSurface2  = new(); // 键盘行背景
+    private static readonly SolidColorBrush BrDivider   = new(); // 列表竖向分隔线
+    private static readonly SolidColorBrush BrFlyoutBg     = new();
+    private static readonly SolidColorBrush BrFlyoutBorder = new();
+    // 透明常量，不随主题变化
     private static readonly SolidColorBrush BrTransp    = new(Colors.Transparent);
-    private static readonly SolidColorBrush BrHoverBg   = new(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
+
+    private enum AppTheme  { Dark, Light }
+    private enum ThemeMode { Dark, Light, Auto }
+    private AppTheme  _currentTheme = AppTheme.Dark;
+    private ThemeMode _themeMode    = ThemeMode.Dark;
+
+    /// <summary>检测系统主题：true=系统当前是深色</summary>
+    private static bool SystemIsDark()
+    {
+        try
+        {
+            using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            if (k?.GetValue("AppsUseLightTheme") is int v) return v == 0;
+        }
+        catch { }
+        return false;
+    }
+
+    /// <summary>把 ThemeMode 解析为实际渲染的 AppTheme（Auto = 系统反向）</summary>
+    private static AppTheme ResolveTheme(ThemeMode mode) => mode switch
+    {
+        ThemeMode.Dark  => AppTheme.Dark,
+        ThemeMode.Light => AppTheme.Light,
+        ThemeMode.Auto  => SystemIsDark() ? AppTheme.Light : AppTheme.Dark,
+        _               => AppTheme.Dark,
+    };
+
+    private record ThemeColors(
+        Color CapBg, Color CapHover, Color CapBorder, Color Fg, Color FgMute,
+        Color Accent, Color Success, Color Info, Color Warn, Color Idle,
+        Color HoverBg, Color Surface1, Color Surface2, Color Divider,
+        Color FlyoutBg, Color FlyoutBorder);
+
+    private static readonly ThemeColors DarkColors = new(
+        CapBg:        Color.FromArgb(0xE0, 0x2C, 0x2C, 0x32),
+        CapHover:     Color.FromArgb(0xF0, 0x40, 0x40, 0x48),
+        CapBorder:    Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF),
+        Fg:           Color.FromArgb(0xF5, 0xFF, 0xFF, 0xFF),
+        FgMute:       Color.FromArgb(0x8C, 0xFF, 0xFF, 0xFF),
+        Accent:       Color.FromArgb(0xFF, 0x4C, 0xC2, 0xFF),
+        Success:      Color.FromArgb(0xFF, 0x5D, 0xD2, 0x8B),
+        Info:         Color.FromArgb(0xFF, 0x79, 0xC5, 0xFF),
+        Warn:         Color.FromArgb(0xFF, 0xFF, 0xC4, 0x6A),
+        Idle:         Color.FromArgb(0x8C, 0xFF, 0xFF, 0xFF),
+        HoverBg:      Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF),
+        Surface1:     Color.FromArgb(0xF0, 0x14, 0x14, 0x16),
+        Surface2:     Color.FromArgb(0xD0, 0x12, 0x12, 0x16),
+        Divider:      Color.FromArgb(0x0F, 0xFF, 0xFF, 0xFF),
+        FlyoutBg:     Color.FromArgb(0xF2, 0x1A, 0x1A, 0x1E),
+        FlyoutBorder: Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
+
+    private static readonly ThemeColors LightColors = new(
+        CapBg:        Color.FromArgb(0xF0, 0xF4, 0xF4, 0xF7),
+        CapHover:     Color.FromArgb(0xFF, 0xE0, 0xE0, 0xE4),
+        CapBorder:    Color.FromArgb(0x33, 0x00, 0x00, 0x00),
+        Fg:           Color.FromArgb(0xF5, 0x00, 0x00, 0x00),
+        FgMute:       Color.FromArgb(0x99, 0x00, 0x00, 0x00),
+        Accent:       Color.FromArgb(0xFF, 0x00, 0x67, 0xC0),
+        Success:      Color.FromArgb(0xFF, 0x0E, 0x70, 0x32),
+        Info:         Color.FromArgb(0xFF, 0x00, 0x5A, 0x9E),
+        Warn:         Color.FromArgb(0xFF, 0x9D, 0x5D, 0x00),
+        Idle:         Color.FromArgb(0x99, 0x00, 0x00, 0x00),
+        HoverBg:      Color.FromArgb(0x1A, 0x00, 0x00, 0x00),
+        Surface1:     Color.FromArgb(0xF2, 0xF4, 0xF4, 0xF7),
+        Surface2:     Color.FromArgb(0xE0, 0xEC, 0xEC, 0xF0),
+        Divider:      Color.FromArgb(0x18, 0x00, 0x00, 0x00),
+        FlyoutBg:     Color.FromArgb(0xF6, 0xFA, 0xFA, 0xFC),
+        FlyoutBorder: Color.FromArgb(0x33, 0x00, 0x00, 0x00));
+
+    static MainWindow() { ApplyThemeColors(AppTheme.Dark); }
+
+    private static void ApplyThemeColors(AppTheme theme)
+    {
+        var c = theme == AppTheme.Dark ? DarkColors : LightColors;
+        BrCapBg.Color     = c.CapBg;
+        BrCapHover.Color  = c.CapHover;
+        BrCapBorder.Color = c.CapBorder;
+        BrFg.Color        = c.Fg;
+        BrFgMute.Color    = c.FgMute;
+        BrAccent.Color    = c.Accent;
+        BrSuccess.Color   = c.Success;
+        BrInfo.Color      = c.Info;
+        BrWarn.Color      = c.Warn;
+        BrIdle.Color      = c.Idle;
+        BrHoverBg.Color   = c.HoverBg;
+        BrSurface1.Color  = c.Surface1;
+        BrSurface2.Color  = c.Surface2;
+        BrDivider.Color   = c.Divider;
+        BrFlyoutBg.Color  = c.FlyoutBg;
+        BrFlyoutBorder.Color = c.FlyoutBorder;
+    }
+
+    private void SetThemeMode(ThemeMode mode)
+    {
+        _themeMode = mode;
+        _currentTheme = ResolveTheme(mode);
+        ApplyThemeColors(_currentTheme);
+        if (RootGrid != null)
+            ApplyThemeToShell();
+        App.StoreSvc.Theme = mode.ToString();
+    }
 
     public MainWindow()
     {
@@ -80,10 +189,29 @@ public sealed partial class MainWindow : Window
         // XAML 圆角 Border 由 WinUI3 用 DirectX 抗锯齿渲染，无白边无锯齿
         try { this.SystemBackdrop = new WinUIEx.TransparentTintBackdrop(); }
         catch (Exception ex) { _log.LogWarning(ex, "TransparentTintBackdrop 设置失败"); }
+        // 从存储加载主题模式（默认 Dark）
+        _themeMode = Enum.TryParse<ThemeMode>(App.StoreSvc.Theme, ignoreCase: true, out var m) ? m : ThemeMode.Dark;
+        _currentTheme = ResolveTheme(_themeMode);
+        ApplyThemeColors(_currentTheme);
+
         ConfigureWindow();
+        ApplyThemeToShell();
         PopulateUI();
         App.StatusSvc.StatusChanged += OnStatusChanged;
         App.StoreSvc.ActiveSlotChanged += OnActiveSlotChanged;
+    }
+
+    private void ApplyThemeToShell()
+    {
+        // 设置由 XAML 引用的 shell 元素背景
+        RootGrid.RequestedTheme = _currentTheme == AppTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        // brush 颜色变化已经自动重绘，下面只是首次绑定
+        StatusBar.Background      = BrSurface1;
+        KBRow1Border.Background   = BrSurface2;
+        KBRow2Border.Background   = BrSurface2;
+        KBRow3Border.Background   = BrSurface2;
+        ListContent.Background    = BrSurface1;
+        ListDivider.Background    = BrDivider;
     }
 
     private void OnActiveSlotChanged(int slot)
@@ -522,10 +650,10 @@ public sealed partial class MainWindow : Window
             CornerRadius = new CornerRadius(3),
             Background = BrTransp,
         };
-        var flyout = BuildSettingsFlyout();
         b.PointerPressed += (s, e) =>
         {
-            flyout.ShowAt((FrameworkElement)s!);
+            // 每次点击重建，主题切换后立即生效
+            BuildSettingsFlyout().ShowAt((FrameworkElement)s!);
             e.Handled = true;
         };
         b.PointerEntered += (s, _) => ((Border)s!).Background = BrHoverBg;
@@ -537,17 +665,14 @@ public sealed partial class MainWindow : Window
             FontSize = 11,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+            Foreground = BrFg,
             IsHitTestVisible = false,
         };
         return b;
     }
 
-    // ── 弹窗样式工厂：让 Flyout / MenuFlyout 符合软件深色风格 ───────────
-    private static readonly SolidColorBrush BrFlyoutBg     = new(Color.FromArgb(0xF2, 0x1A, 0x1A, 0x1E));
-    private static readonly SolidColorBrush BrFlyoutBorder = new(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
-
-    private static Style MakeDarkMenuStyle()
+    // ── 弹窗样式工厂：让 Flyout / MenuFlyout 符合当前主题 ───────────
+    private Style MakeDarkMenuStyle()
     {
         var s = new Style(typeof(MenuFlyoutPresenter));
         s.Setters.Add(new Setter(Control.BackgroundProperty,      BrFlyoutBg));
@@ -556,11 +681,12 @@ public sealed partial class MainWindow : Window
         s.Setters.Add(new Setter(Control.CornerRadiusProperty,    new CornerRadius(8)));
         s.Setters.Add(new Setter(Control.FontSizeProperty,        11.0));
         s.Setters.Add(new Setter(Control.PaddingProperty,         new Thickness(4)));
-        s.Setters.Add(new Setter(FrameworkElement.RequestedThemeProperty, ElementTheme.Dark));
+        s.Setters.Add(new Setter(FrameworkElement.RequestedThemeProperty,
+            _currentTheme == AppTheme.Dark ? ElementTheme.Dark : ElementTheme.Light));
         return s;
     }
 
-    private static Style MakeDarkFlyoutStyle()
+    private Style MakeDarkFlyoutStyle()
     {
         var s = new Style(typeof(FlyoutPresenter));
         s.Setters.Add(new Setter(Control.BackgroundProperty,      BrFlyoutBg));
@@ -569,7 +695,8 @@ public sealed partial class MainWindow : Window
         s.Setters.Add(new Setter(Control.CornerRadiusProperty,    new CornerRadius(10)));
         s.Setters.Add(new Setter(Control.PaddingProperty,         new Thickness(12)));
         s.Setters.Add(new Setter(Control.FontSizeProperty,        11.0));
-        s.Setters.Add(new Setter(FrameworkElement.RequestedThemeProperty, ElementTheme.Dark));
+        s.Setters.Add(new Setter(FrameworkElement.RequestedThemeProperty,
+            _currentTheme == AppTheme.Dark ? ElementTheme.Dark : ElementTheme.Light));
         return s;
     }
 
@@ -585,9 +712,8 @@ public sealed partial class MainWindow : Window
         help.Click += OnHelpClicked;
         flyout.Items.Add(help);
 
-        var theme = MakeMenuItem("切换主题");
-        theme.Click += OnThemeClicked;
-        flyout.Items.Add(theme);
+        var themeSub = new MenuFlyoutSubItem { Text = "切换主题", FontSize = 11, MinHeight = 0, Padding = new Thickness(10, 4, 10, 4) };
+        flyout.Items.Add(themeSub);
 
         var presetSub = new MenuFlyoutSubItem { Text = "预设管理", FontSize = 11, MinHeight = 0, Padding = new Thickness(10, 4, 10, 4) };
         flyout.Items.Add(presetSub);
@@ -598,9 +724,40 @@ public sealed partial class MainWindow : Window
         exit.Click += OnExitClicked;
         flyout.Items.Add(exit);
 
-        // 每次打开时重建预设子菜单（反映当前 active）
-        flyout.Opening += (_, _) => BuildPresetSubmenu(presetSub);
+        // 每次打开时重建主题/预设子菜单（反映当前选择）
+        flyout.Opening += (_, _) =>
+        {
+            BuildThemeSubmenu(themeSub);
+            BuildPresetSubmenu(presetSub);
+        };
         return flyout;
+    }
+
+    private void BuildThemeSubmenu(MenuFlyoutSubItem parent)
+    {
+        parent.Items.Clear();
+        void Add(string text, ThemeMode mode)
+        {
+            var item = MakeMenuItem((_themeMode == mode ? "● " : "    ") + text);
+            item.Click += (_, _) =>
+            {
+                SetThemeMode(mode);
+                App.StatusSvc?.Set(new StatusMessage
+                {
+                    Tone = StatusTone.Info,
+                    Text = mode switch
+                    {
+                        ThemeMode.Dark  => "已切换为深色主题",
+                        ThemeMode.Light => "已切换为浅色主题",
+                        _               => $"已跟随系统（当前为{(_currentTheme == AppTheme.Dark ? "深" : "浅")}色）",
+                    },
+                });
+            };
+            parent.Items.Add(item);
+        }
+        Add("深色主题", ThemeMode.Dark);
+        Add("浅色主题", ThemeMode.Light);
+        Add("跟随系统", ThemeMode.Auto);
     }
 
     private void BuildPresetSubmenu(MenuFlyoutSubItem parent)
@@ -661,10 +818,6 @@ public sealed partial class MainWindow : Window
         flyout.ShowAt(StatusBar);
     }
 
-    private void OnThemeClicked(object sender, RoutedEventArgs e)
-    {
-        App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Info, Text = "浅色主题暂未实现（下次提交）" });
-    }
 
     private void OnExitClicked(object sender, RoutedEventArgs e)
     {
@@ -742,7 +895,7 @@ public sealed partial class MainWindow : Window
             FontSize = 10,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+            Foreground = BrFg,
             IsHitTestVisible = false,
         };
         return b;

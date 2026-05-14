@@ -23,6 +23,7 @@ public sealed class BindingStore : IDisposable
     private readonly ILogger<BindingStore> _log;
     private readonly List<PresetSlot> _slots = new();
     private int _activeIndex;
+    private string _theme = "Dark";
     private readonly SemaphoreSlim _lock = new(1, 1);
     private System.Threading.Timer? _debounceTimer;
     private readonly object _debounceLock = new();
@@ -53,6 +54,12 @@ public sealed class BindingStore : IDisposable
 
     public int ActiveSlot => _activeIndex;
     public int SlotTotal  => SlotCount;
+
+    public string Theme
+    {
+        get => _theme;
+        set { _theme = value ?? "Dark"; ScheduleSave(); }
+    }
 
     public string GetSlotName(int index)
     {
@@ -116,14 +123,15 @@ public sealed class BindingStore : IDisposable
                 return;
             }
 
-            // v2 正常加载
+            // v2/v3 正常加载
             _activeIndex = Math.Clamp(data.ActiveSlot, 0, SlotCount - 1);
+            _theme = string.IsNullOrEmpty(data.Theme) ? "Dark" : data.Theme;
             for (int i = 0; i < Math.Min(SlotCount, data.Slots!.Count); i++)
             {
                 _slots[i].Name     = data.Slots[i].Name ?? "";
                 _slots[i].Bindings = data.Slots[i].Bindings ?? new();
             }
-            _log.LogInformation("已加载预设 active={A}，slot0 共 {N} 条", _activeIndex, _slots[0].Bindings.Count);
+            _log.LogInformation("已加载预设 active={A}，theme={T}，slot0 共 {N} 条", _activeIndex, _theme, _slots[0].Bindings.Count);
         }
         catch (CryptographicException)
         {
@@ -165,8 +173,9 @@ public sealed class BindingStore : IDisposable
         {
             var data = new BindingsData
             {
-                Version = 2,
+                Version = 3,
                 ActiveSlot = _activeIndex,
+                Theme = _theme,
                 Slots = _slots.Select(s => new PresetSlot
                 {
                     Name = s.Name,

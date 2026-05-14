@@ -7,7 +7,7 @@
     <!-- 真透明：靠 WinUIEx.TransparentTintBackdrop 实现窗口真透明，
          圆角 Border 由 WinUI3 自己抗锯齿渲染，无白边无锯齿。
          UseLayoutRounding=True 强制元素位置对齐整数像素，避免子像素糊 -->
-    <Grid x:Name="RootGrid" Background="Transparent" RequestedTheme="Dark"
+    <Grid x:Name="RootGrid" Background="Transparent"
           UseLayoutRounding="True">
 
         <StackPanel x:Name="MainLayout" Spacing="4" VerticalAlignment="Top">
@@ -15,7 +15,6 @@
             <!-- ═══ Status Bar：三种模式完全统一 ═══ -->
             <Border x:Name="StatusBar" CornerRadius="15" Height="30"
                     Width="344" HorizontalAlignment="Center"
-                    Background="#F0141416"
                     Padding="10,0,4,0"
                     PointerPressed="OnDragAreaPressed"
                     PointerMoved="OnDragAreaMoved"
@@ -47,7 +46,7 @@
                      HorizontalAlignment="Center" 让整个键盘组在窗口内居中，
                      第一排（最宽）自然居中对齐状态栏；2/3 行相对第一排左缩进保持阶梯 -->
                 <StackPanel x:Name="KBContent" Spacing="2" HorizontalAlignment="Center">
-                    <Border x:Name="KBRow1Border" CornerRadius="8" Background="#D0121216"
+                    <Border x:Name="KBRow1Border" CornerRadius="8"
                             Padding="3" HorizontalAlignment="Left"
                             PointerPressed="OnDragAreaPressed"
                             PointerMoved="OnDragAreaMoved"
@@ -55,7 +54,7 @@
                             PointerCaptureLost="OnDragAreaCaptureLost">
                         <StackPanel x:Name="KBRow1" Orientation="Horizontal" Spacing="3"/>
                     </Border>
-                    <Border x:Name="KBRow2Border" CornerRadius="8" Background="#D0121216"
+                    <Border x:Name="KBRow2Border" CornerRadius="8"
                             Padding="3" HorizontalAlignment="Left" Margin="22,0,0,0"
                             PointerPressed="OnDragAreaPressed"
                             PointerMoved="OnDragAreaMoved"
@@ -63,7 +62,7 @@
                             PointerCaptureLost="OnDragAreaCaptureLost">
                         <StackPanel x:Name="KBRow2" Orientation="Horizontal" Spacing="3"/>
                     </Border>
-                    <Border x:Name="KBRow3Border" CornerRadius="8" Background="#D0121216"
+                    <Border x:Name="KBRow3Border" CornerRadius="8"
                             Padding="3" HorizontalAlignment="Left" Margin="34,0,0,0"
                             PointerPressed="OnDragAreaPressed"
                             PointerMoved="OnDragAreaMoved"
@@ -75,7 +74,7 @@
 
                 <!-- List Layout -->
                 <Border x:Name="ListContent" Visibility="Collapsed"
-                        CornerRadius="8" Background="#F0141416"
+                        CornerRadius="8"
                         PointerPressed="OnDragAreaPressed"
                         PointerMoved="OnDragAreaMoved"
                         PointerReleased="OnDragAreaReleased"
@@ -87,7 +86,7 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel x:Name="ListCol1" Padding="0,4"/>
-                        <Border Grid.Column="1" Width="1" Background="#0FFFFFFF" Margin="0,4"/>
+                        <Border x:Name="ListDivider" Grid.Column="1" Width="1" Margin="0,4"/>
                         <StackPanel x:Name="ListCol2" Grid.Column="2" Padding="0,4"/>
                     </Grid>
                 </Border>
