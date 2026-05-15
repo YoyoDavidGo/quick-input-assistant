@@ -19,7 +19,7 @@ A WinUI 3 floating-panel utility that intercepts 14 `Alt+` global hotkeys via lo
 - **Auto-start toggle** — one click in the settings menu (uses HKCU registry, no admin needed)
 - **Local-only & encrypted** — all bindings stored locally with DPAPI
 
-## Interface Preview
+## Screenshots
 
 <div align="center">
 
@@ -43,9 +43,21 @@ A WinUI 3 floating-panel utility that intercepts 14 `Alt+` global hotkeys via lo
       <sub>Light Theme</sub>
     </td>
     <td width="50%" align="center">
-      <img src="./docs/assets/QIA-menu.png" alt="Menu" width="100%">
+      <img src="./docs/assets/QIA-menu.png" alt="Tray Menu" width="100%">
       <br>
-      <sub>Menu</sub>
+      <sub>Tray Menu</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-capsule-mode.png" alt="Capsule Mode" width="100%">
+      <br>
+      <sub>Capsule Mode</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-list-mode.png" alt="List Mode" width="100%">
+      <br>
+      <sub>List Mode</sub>
     </td>
   </tr>
 </table>

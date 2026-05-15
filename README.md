@@ -43,9 +43,21 @@ WinUI 3 桌面浮窗工具：低层钩子拦截 14 个 `Alt+` 组合键，把绑
       <sub>浅色主题</sub>
     </td>
     <td width="50%" align="center">
-      <img src="./docs/assets/QIA-menu.png" alt="菜单界面" width="100%">
+      <img src="./docs/assets/QIA-menu.png" alt="托盘菜单" width="100%">
       <br>
-      <sub>菜单界面</sub>
+      <sub>托盘菜单</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-capsule-mode.png" alt="胶囊模式" width="100%">
+      <br>
+      <sub>胶囊模式</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-list-mode.png" alt="列表模式" width="100%">
+      <br>
+      <sub>列表模式</sub>
     </td>
   </tr>
 </table>
