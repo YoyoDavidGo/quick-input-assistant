@@ -19,6 +19,39 @@ WinUI 3 桌面浮窗工具：低层钩子拦截 14 个 `Alt+` 组合键，把绑
 - **开机自启** — 一键开关（HKCU 注册表，无需管理员）
 - **数据安全** — 所有绑定本地 DPAPI 加密存储
 
+## 界面预览
+
+<div align="center">
+
+<table width="75%">
+  <tr>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-input.png" alt="输入模式" width="100%">
+      <br>
+      <sub>输入模式</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-copy.png" alt="复制模式" width="100%">
+      <br>
+      <sub>复制模式</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-light-theme.png" alt="浅色主题" width="100%">
+      <br>
+      <sub>浅色主题</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-menu.png" alt="菜单界面" width="100%">
+      <br>
+      <sub>菜单界面</sub>
+    </td>
+  </tr>
+</table>
+
+</div>
+
 ## 快速开始
 
 1. 下载 [Releases](../../releases) 中的 `QuickInputAssistant_Setup.exe`

@@ -19,6 +19,39 @@ A WinUI 3 floating-panel utility that intercepts 14 `Alt+` global hotkeys via lo
 - **Auto-start toggle** — one click in the settings menu (uses HKCU registry, no admin needed)
 - **Local-only & encrypted** — all bindings stored locally with DPAPI
 
+## Interface Preview
+
+<div align="center">
+
+<table width="75%">
+  <tr>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-input.png" alt="Input Mode" width="100%">
+      <br>
+      <sub>Input Mode</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-copy.png" alt="Copy Mode" width="100%">
+      <br>
+      <sub>Copy Mode</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-light-theme.png" alt="Light Theme" width="100%">
+      <br>
+      <sub>Light Theme</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./docs/assets/QIA-menu.png" alt="Menu" width="100%">
+      <br>
+      <sub>Menu</sub>
+    </td>
+  </tr>
+</table>
+
+</div>
+
 ## Quick start
 
 1. Download `QuickInputAssistant_Setup.exe` from [Releases](../../releases)
