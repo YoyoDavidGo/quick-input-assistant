@@ -1,3 +1,5 @@
+[English](./README.en.md) | **简体中文**
+
 # 快捷输入助手 · QuickInputAssistant
 
 WinUI 3 桌面浮窗工具：低层钩子拦截 14 个 `Alt+` 组合键，把绑定的文本一键输出到当前焦点窗口。日常报销/工单录入提效神器。
