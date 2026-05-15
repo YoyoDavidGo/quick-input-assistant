@@ -29,7 +29,7 @@ QuickInputAssistant is a WinUI 3 floating-panel utility that lets you output fre
 - **14 global hotkeys** — `Alt+1~6` / `Alt+Q~R` / `Alt+A~F`; bind any text to each key and emit it instantly to the focused window
 - **Smart date key `Alt+Q`** — single-click outputs today's date (YY/MM/DD); double-click undoes the previous output and emits +1 day
 - **4 named presets** — switch between different binding sets with one click; each set is stored independently
-- **Inline editing** — right-click a keycap → edit in place → any left-click confirms / any right-click cancels
+- **Inline editing** — select the text and press the corresponding shortcut key to bind it with one click or right-click a keycap → edit in place → any left-click confirms / any right-click cancels
 - **3 themes** — Dark / Light / Follow system, suitable for different desktop backgrounds
 - **Lightweight overlay** — always-on-top, transparent background, draggable, with 3 view modes: capsule / keyboard / list
 - **Auto-start toggle** — one-click startup switch using HKCU registry, no admin permission required
