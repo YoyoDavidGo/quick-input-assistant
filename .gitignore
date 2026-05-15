@@ -12,7 +12,9 @@ Installer/Resources/app.zip
 UI/
 
 # 内部文档 / 临时
-docs/
+docs/*
+!docs/assets/
+!docs/assets/**
 quick-input-PRD.md
 build-log.txt
 
