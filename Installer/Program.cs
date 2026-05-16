@@ -140,12 +140,8 @@ CreateShortcut(
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), $"{AppName}.lnk"),
     Path.Combine(installDir, ExeName), installDir);
 
-// ── 开机自启（HKCU）────────────────────────────────────────────
-Step("配置开机自启");
-using (var runKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)!)
-    runKey.SetValue(AppName, $"\"{Path.Combine(installDir, ExeName)}\"");
-
 // ── 控制面板卸载项 ────────────────────────────────────────────
+// 注：开机自启默认关闭，用户可在应用齿轮菜单 → 开机自启动 自助开启。
 Step("注册卸载项");
 using (var uninstKey = Registry.LocalMachine.CreateSubKey(
     $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{AppName}"))
@@ -171,7 +167,7 @@ Console.WriteLine();
 Console.WriteLine($"  • 程序位置：{Path.Combine(installDir, ExeName)}");
 Console.WriteLine("  • 桌面已创建快捷方式");
 Console.WriteLine("  • 开始菜单已加入");
-Console.WriteLine("  • 开机自启已配置");
+Console.WriteLine("  • 开机自启：未启用（可在应用齿轮菜单中开启）");
 Console.WriteLine();
 Console.Write("  是否立即启动程序？[Y/n] ");
 var ans = (Console.ReadLine() ?? "").Trim().ToUpper();

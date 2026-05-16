@@ -188,7 +188,11 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 
-        // 先确定主题：从存储加载、应用颜色、设置 RootGrid.RequestedTheme，
+        // 先加载语言
+        Services.Strings.Lang = Enum.TryParse<Services.Lang>(App.StoreSvc.Lang, ignoreCase: true, out var lang) ? lang : Services.Lang.Zh;
+        Services.Strings.Changed += OnStringsChanged;
+
+        // 再确定主题：从存储加载、应用颜色、设置 RootGrid.RequestedTheme，
         // 这样后续 SystemBackdrop 创建时能取到正确的主题 tint（修复首次启动浅色色调错误）
         _themeMode = Enum.TryParse<ThemeMode>(App.StoreSvc.Theme, ignoreCase: true, out var m) ? m : ThemeMode.Dark;
         _currentTheme = ResolveTheme(_themeMode);
@@ -231,6 +235,26 @@ public sealed partial class MainWindow : Window
         });
     }
 
+    private void OnStringsChanged()
+    {
+        DispatcherQueue?.TryEnqueue(() =>
+        {
+            AppWindow.Title = Services.Strings.WindowTitle;
+            if (StatusText.Text == _lastDefaultStatusText)
+            {
+                StatusText.Text = Services.Strings.RunningStatus;
+            }
+            _lastDefaultStatusText = Services.Strings.RunningStatus;
+            // 预设名若用的是默认值（未自定义），切语言后立即用新语言显示
+            if (_presetNameText != null)
+                _presetNameText.Text = App.StoreSvc.GetSlotName(App.StoreSvc.ActiveSlot);
+            RefreshValues();
+        });
+    }
+
+    /// <summary>记住上一次显示的「运行中」默认文本，切换语言时仅在状态栏未被状态消息覆盖时刷新</summary>
+    private string _lastDefaultStatusText = Services.Strings.RunningStatus;
+
     private void ConfigureWindow()
     {
         AppWindow.SetPresenter(AppWindowPresenterKind.Default);
@@ -243,7 +267,10 @@ public sealed partial class MainWindow : Window
         }
 
         AppWindow.IsShownInSwitchers = false;
-        AppWindow.Title = "快捷输入助手";
+        AppWindow.Title = Services.Strings.WindowTitle;
+        // 同步状态栏默认文字（XAML 中硬编码的也是中文，启动语言为英文时立即更新）
+        if (StatusText != null) StatusText.Text = Services.Strings.RunningStatus;
+        _lastDefaultStatusText = Services.Strings.RunningStatus;
         try
         {
             string icoPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
@@ -722,20 +749,23 @@ public sealed partial class MainWindow : Window
             ShouldConstrainToRootBounds = false,
         };
 
-        var help = MakeMenuItem("帮助");
+        var help = MakeMenuItem(Services.Strings.Help);
         help.Click += OnHelpClicked;
         flyout.Items.Add(help);
 
-        var themeSub = new MenuFlyoutSubItem { Text = "切换主题", FontSize = 11, MinHeight = 0, Padding = new Thickness(10, 4, 10, 4) };
+        var themeSub = new MenuFlyoutSubItem { Text = Services.Strings.SwitchTheme, FontSize = 11, MinHeight = 0, Padding = new Thickness(10, 4, 10, 4) };
         flyout.Items.Add(themeSub);
 
-        var presetSub = new MenuFlyoutSubItem { Text = "预设管理", FontSize = 11, MinHeight = 0, Padding = new Thickness(10, 4, 10, 4) };
+        var langSub = new MenuFlyoutSubItem { Text = Services.Strings.Language, FontSize = 11, MinHeight = 0, Padding = new Thickness(10, 4, 10, 4) };
+        flyout.Items.Add(langSub);
+
+        var presetSub = new MenuFlyoutSubItem { Text = Services.Strings.ManagePresets, FontSize = 11, MinHeight = 0, Padding = new Thickness(10, 4, 10, 4) };
         flyout.Items.Add(presetSub);
 
         flyout.Items.Add(new MenuFlyoutSeparator());
 
         bool autoStart = Services.AutoStartService.IsEnabled();
-        var autoItem = MakeMenuItem((autoStart ? "● " : "    ") + "开机自启动");
+        var autoItem = MakeMenuItem((autoStart ? "● " : "    ") + Services.Strings.AutoStart);
         autoItem.Click += (_, _) =>
         {
             bool now = !Services.AutoStartService.IsEnabled();
@@ -743,22 +773,45 @@ public sealed partial class MainWindow : Window
             App.StatusSvc?.Set(new StatusMessage
             {
                 Tone = StatusTone.Info,
-                Text = now ? "已开启开机自启动" : "已关闭开机自启动",
+                Text = now ? Services.Strings.AutoStartOn : Services.Strings.AutoStartOff,
             });
         };
         flyout.Items.Add(autoItem);
 
-        var exit = MakeMenuItem("退出应用");
+        var exit = MakeMenuItem(Services.Strings.Exit);
         exit.Click += OnExitClicked;
         flyout.Items.Add(exit);
 
-        // 每次打开时重建主题/预设子菜单（反映当前选择）
+        // 每次打开时重建主题/语言/预设子菜单（反映当前选择）
         flyout.Opening += (_, _) =>
         {
             BuildThemeSubmenu(themeSub);
+            BuildLangSubmenu(langSub);
             BuildPresetSubmenu(presetSub);
         };
         return flyout;
+    }
+
+    private void BuildLangSubmenu(MenuFlyoutSubItem parent)
+    {
+        parent.Items.Clear();
+        void Add(string text, Services.Lang lang)
+        {
+            var item = MakeMenuItem((Services.Strings.Lang == lang ? "● " : "    ") + text);
+            item.Click += (_, _) =>
+            {
+                Services.Strings.Lang = lang;
+                App.StoreSvc.Lang = lang.ToString();
+                App.StatusSvc?.Set(new StatusMessage
+                {
+                    Tone = StatusTone.Info,
+                    Text = lang == Services.Lang.Zh ? Services.Strings.LangSwitchedZh : Services.Strings.LangSwitchedEn,
+                });
+            };
+            parent.Items.Add(item);
+        }
+        Add(Services.Strings.LangZh, Services.Lang.Zh);
+        Add(Services.Strings.LangEn, Services.Lang.En);
     }
 
     private void BuildThemeSubmenu(MenuFlyoutSubItem parent)
@@ -775,17 +828,17 @@ public sealed partial class MainWindow : Window
                     Tone = StatusTone.Info,
                     Text = mode switch
                     {
-                        ThemeMode.Dark  => "已切换为深色主题",
-                        ThemeMode.Light => "已切换为浅色主题",
-                        _               => $"已跟随系统（当前为{(_currentTheme == AppTheme.Dark ? "深" : "浅")}色）",
+                        ThemeMode.Dark  => Services.Strings.SwitchedDark,
+                        ThemeMode.Light => Services.Strings.SwitchedLight,
+                        _               => _currentTheme == AppTheme.Dark ? Services.Strings.FollowSystemDark : Services.Strings.FollowSystemLight,
                     },
                 });
             };
             parent.Items.Add(item);
         }
-        Add("深色主题", ThemeMode.Dark);
-        Add("浅色主题", ThemeMode.Light);
-        Add("跟随系统", ThemeMode.Auto);
+        Add(Services.Strings.ThemeDark,  ThemeMode.Dark);
+        Add(Services.Strings.ThemeLight, ThemeMode.Light);
+        Add(Services.Strings.ThemeAuto,  ThemeMode.Auto);
     }
 
     private void BuildPresetSubmenu(MenuFlyoutSubItem parent)
@@ -800,10 +853,10 @@ public sealed partial class MainWindow : Window
             parent.Items.Add(item);
         }
         parent.Items.Add(new MenuFlyoutSeparator());
-        var rename = MakeMenuItem("重命名当前预设…");
+        var rename = MakeMenuItem(Services.Strings.RenamePreset);
         rename.Click += OnRenameCurrentClicked;
         parent.Items.Add(rename);
-        var reset = MakeMenuItem("重置当前为默认绑定…");
+        var reset = MakeMenuItem(Services.Strings.ResetPreset);
         reset.Click += OnResetCurrentClicked;
         parent.Items.Add(reset);
     }
@@ -853,16 +906,16 @@ public sealed partial class MainWindow : Window
             return btn;
         }
 
-        var okBtn     = MakeDlgBtn("重置", primary: true);
-        var cancelBtn = MakeDlgBtn("取消", primary: false);
+        var okBtn     = MakeDlgBtn(Services.Strings.Reset,  primary: true);
+        var cancelBtn = MakeDlgBtn(Services.Strings.Cancel, primary: false);
         cancelBtn.Margin = new Thickness(6, 0, 0, 0);
         var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         btnRow.Children.Add(okBtn);
         btnRow.Children.Add(cancelBtn);
-        var panel = new StackPanel { Spacing = 8, MinWidth = 240 };
-        panel.Children.Add(new TextBlock { Text = "重置当前预设？", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = BrFg });
-        panel.Children.Add(new TextBlock { Text = $"将把预设「{name}」的全部 14 个键位绑定恢复为出厂默认值，此操作不可撤销。",
-            FontSize = 11, Foreground = BrFgMute, TextWrapping = TextWrapping.Wrap });
+        var panel = new StackPanel { Spacing = 8, MinWidth = 280, MaxWidth = 320 };
+        panel.Children.Add(new TextBlock { Text = Services.Strings.ResetTitle, FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = BrFg });
+        panel.Children.Add(new TextBlock { Text = Services.Strings.ResetMessage(name),
+            FontSize = 11, Foreground = BrFgMute, TextWrapping = TextWrapping.Wrap, MaxWidth = 296 });
         panel.Children.Add(btnRow);
 
         var flyout = new Flyout
@@ -875,7 +928,7 @@ public sealed partial class MainWindow : Window
         {
             App.StoreSvc.ResetSlotToDefaults(active);
             flyout.Hide();
-            App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Success, Text = $"已重置「{name}」为默认绑定" });
+            App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Success, Text = Services.Strings.PresetReset(name) });
         };
         cancelBtn.Click += (_, _) => flyout.Hide();
         flyout.ShowAt(StatusBar);
@@ -891,24 +944,7 @@ public sealed partial class MainWindow : Window
 
     private void OnHelpClicked(object sender, RoutedEventArgs e)
     {
-        string text =
-            "【输出绑定文字】\n" +
-            "• 按 Alt+1~6 / Q-R / A-F 任一组合键，输出绑定文字到当前焦点窗口\n" +
-            "• 或左键单击 UI 上的按键\n\n" +
-            "【日期键 Alt+Q】\n" +
-            "• 单击：输出今日日期 (YY/MM/DD)\n" +
-            "• 双击：撤销前一次并改为 +1 天\n\n" +
-            "【修改绑定（内联编辑）】\n" +
-            "• 右键单击 UI 上的按键 → 进入编辑态（键帽变蓝边、文字全选）\n" +
-            "• 确认：回车 / 左键单击任意位置（键帽、状态栏、空白、桌面）\n" +
-            "• 取消：Esc / 右键单击任意位置（键帽、空白、桌面）\n" +
-            "• 或在外部应用先选中文字 → 按 Alt+键 自动绑定\n\n" +
-            "【预设】\n" +
-            "• 齿轮菜单 → 预设管理：4 套独立绑定，可命名 / 切换\n" +
-            "• 状态栏齿轮左侧显示当前预设名\n\n" +
-            "【主题】\n" +
-            "• 齿轮菜单 → 切换主题：深色 / 浅色 / 跟随系统\n" +
-            "• 「跟随系统」与系统主题反向，便于在反差背景下查看";
+        string text = Services.Strings.HelpText;
         var tb = new TextBlock
         {
             Text = text,
@@ -1004,14 +1040,14 @@ public sealed partial class MainWindow : Window
             return btn;
         }
 
-        var okBtn     = MakeDlgBtn("确定", primary: true);
-        var cancelBtn = MakeDlgBtn("取消", primary: false);
+        var okBtn     = MakeDlgBtn(Services.Strings.Ok,     primary: true);
+        var cancelBtn = MakeDlgBtn(Services.Strings.Cancel, primary: false);
         cancelBtn.Margin = new Thickness(6, 0, 0, 0);
         var btnRow    = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         btnRow.Children.Add(okBtn);
         btnRow.Children.Add(cancelBtn);
         var panel = new StackPanel { Spacing = 8, MinWidth = 220 };
-        panel.Children.Add(new TextBlock { Text = "重命名预设", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = BrFg });
+        panel.Children.Add(new TextBlock { Text = Services.Strings.RenameTitle, FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = BrFg });
         panel.Children.Add(tb);
         panel.Children.Add(btnRow);
 
@@ -1031,7 +1067,7 @@ public sealed partial class MainWindow : Window
             if (_presetNameText != null) _presetNameText.Text = App.StoreSvc.GetSlotName(active);
             flyout.Hide();
             SetEditMode(false);
-            App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Success, Text = $"预设已重命名为 \"{App.StoreSvc.GetSlotName(active)}\"" });
+            App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Success, Text = Services.Strings.PresetRenamed(App.StoreSvc.GetSlotName(active)) });
         }
         void DoCancel() { flyout.Hide(); SetEditMode(false); }
         okBtn.Click     += (_, _) => DoOk();
@@ -1205,13 +1241,13 @@ public sealed partial class MainWindow : Window
                 {
                     Tone = StatusTone.Success,
                     Text = string.IsNullOrEmpty(newVal)
-                        ? $"已清空 ALT+{key} 绑定"
-                        : $"设置 ALT+{key} 为 \"{newVal}\" 成功",
+                        ? Services.Strings.ClearKeyOk(key)
+                        : Services.Strings.SetKeyOk(key, newVal),
                 });
             }
             else
             {
-                App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Warn, Text = warn ?? "格式错误" });
+                App.StatusSvc?.Set(new StatusMessage { Tone = StatusTone.Warn, Text = warn ?? Services.Strings.DateFormatError });
             }
         }
 
@@ -1250,7 +1286,7 @@ public sealed partial class MainWindow : Window
         string val = App.StoreSvc.Get(key);
         if (string.IsNullOrEmpty(val))
         {
-            tb.Text = "点击绑定";
+            tb.Text = Services.Strings.TapToBind;
             tb.FontFamily = new FontFamily("Segoe UI");
             tb.FontStyle  = Windows.UI.Text.FontStyle.Italic;
             tb.Foreground = BrFgMute;

@@ -6,6 +6,7 @@ internal sealed class BindingsData
     public int ActiveSlot { get; set; }
     public List<PresetSlot> Slots { get; set; } = new();
     public string Theme { get; set; } = "Dark";
+    public string Lang  { get; set; } = "Zh";
     public DateTimeOffset LastUpdated { get; set; } = DateTimeOffset.Now;
 
     /// <summary>v1 旧字段：仅用于反序列化迁移到 Slots，不应再写入</summary>

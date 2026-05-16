@@ -24,6 +24,7 @@ public sealed class BindingStore : IDisposable
     private readonly List<PresetSlot> _slots = new();
     private int _activeIndex;
     private string _theme = "Dark";
+    private string _lang  = "Zh";
     private readonly SemaphoreSlim _lock = new(1, 1);
     private System.Threading.Timer? _debounceTimer;
     private readonly object _debounceLock = new();
@@ -61,6 +62,12 @@ public sealed class BindingStore : IDisposable
         set { _theme = value ?? "Dark"; ScheduleSave(); }
     }
 
+    public string Lang
+    {
+        get => _lang;
+        set { _lang = value ?? "Zh"; ScheduleSave(); }
+    }
+
     public string GetSlotName(int index)
     {
         if (index < 0 || index >= SlotCount) return "";
@@ -86,7 +93,7 @@ public sealed class BindingStore : IDisposable
         ActiveSlotChanged?.Invoke(index);
     }
 
-    private static string DefaultName(int index) => $"预设{index + 1}";
+    private static string DefaultName(int index) => Strings.DefaultPresetName(index);
 
     /// <summary>应用退出时强制 flush。</summary>
     public void Flush()
@@ -126,6 +133,7 @@ public sealed class BindingStore : IDisposable
             // v2/v3 正常加载
             _activeIndex = Math.Clamp(data.ActiveSlot, 0, SlotCount - 1);
             _theme = string.IsNullOrEmpty(data.Theme) ? "Dark" : data.Theme;
+            _lang  = string.IsNullOrEmpty(data.Lang)  ? "Zh"   : data.Lang;
             for (int i = 0; i < Math.Min(SlotCount, data.Slots!.Count); i++)
             {
                 _slots[i].Name     = data.Slots[i].Name ?? "";
@@ -170,7 +178,7 @@ public sealed class BindingStore : IDisposable
 
     private void SetDefaultsForFirstInstall()
     {
-        _slots[0].Name = "报销";
+        _slots[0].Name = Strings.DefaultReimbursementName;
         _slots[0].Bindings = BuildDefaultBindings();
         SaveNow();
         _log.LogInformation("首次安装：已写入 {N} 条默认绑定到预设 1（报销）", _slots[0].Bindings.Count);
@@ -203,6 +211,7 @@ public sealed class BindingStore : IDisposable
                 Version = 3,
                 ActiveSlot = _activeIndex,
                 Theme = _theme,
+                Lang  = _lang,
                 Slots = _slots.Select(s => new PresetSlot
                 {
                     Name = s.Name,

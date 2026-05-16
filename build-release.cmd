@@ -69,8 +69,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [4/4] Build single-file installer...
-dotnet publish "%ROOT%\Installer\Installer.csproj" -c Release -r win-x64 -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true -o "%ROOT%\dist"
+echo [4/4] Build single-file installer (self-contained, bundles .NET 8 runtime)...
+dotnet publish "%ROOT%\Installer\Installer.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true -p:EnableCompressionInSingleFile=true -o "%ROOT%\dist"
 if errorlevel 1 (
     echo.
     echo ###### Installer publish FAILED ######
@@ -86,7 +86,11 @@ echo.
 echo  Build success! Installer at:
 echo    %ROOT%\dist\QuickInputAssistant_Setup.exe
 echo.
-echo  Double click to install.
+echo  - Self-contained: .NET 8 runtime bundled (works on clean Win10 19045+)
+echo  - Target users may still need VC++ Redistributable 2015-2022 (x64)
+echo    https://aka.ms/vs/17/release/vc_redist.x64.exe
+echo.
+echo  Double click installer to install.
 echo ============================================================
 echo.
 pause
